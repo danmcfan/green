@@ -1,0 +1,29 @@
+# Pipeline output: published through GitHub Releases, never committed (ADR 0002)
+data/
+models/
+tiles/
+*.pmtiles
+
+# Credentials
+.env
+*.json.key
+keys/
+*-key.json
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Editors and OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log

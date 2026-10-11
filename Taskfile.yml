@@ -1,0 +1,54 @@
+version: '3'
+
+dotenv: ['.env']
+
+tasks:
+  setup:
+    desc: Install backend and frontend dependencies
+    cmds:
+      - test -f .env || cp .env.example .env
+      - uv sync --directory backend
+      - bun install --cwd frontend --frozen-lockfile
+
+  dev:
+    desc: Run the frontend dev server
+    dir: frontend
+    cmd: bun run dev {{.CLI_ARGS}}
+
+  lint:
+    desc: Lint backend and frontend
+    cmds:
+      - task: lint:backend
+      - task: lint:frontend
+
+  lint:backend:
+    dir: backend
+    cmds:
+      - uv run ruff check
+      - uv run ruff format --check
+
+  lint:frontend:
+    dir: frontend
+    cmd: bun run lint
+
+  format:
+    desc: Format backend code
+    dir: backend
+    cmd: uv run ruff format
+
+  test:
+    desc: Run backend tests
+    dir: backend
+    cmd: uv run pytest
+
+  build:
+    desc: Typecheck and build the frontend
+    dir: frontend
+    cmd: bun run build
+
+  check:
+    desc: Everything CI runs
+    cmds:
+      - task: lint
+      - task: test
+      - task: build
