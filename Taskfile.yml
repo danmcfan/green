@@ -41,6 +41,16 @@ tasks:
     dir: backend
     cmd: uv run pytest
 
+  pipeline:
+    desc: "Run the backend pipeline, e.g. task pipeline -- run --region small --source synthetic"
+    dir: backend
+    cmd: uv run green {{.CLI_ARGS}}
+
+  pipeline:fixture:
+    desc: Run the full pipeline on a small region with synthetic data and produce PMTiles
+    dir: backend
+    cmd: uv run green run --region small --source synthetic --start 2010 --end 2013 --block-km 25
+
   build:
     desc: Typecheck and build the frontend
     dir: frontend

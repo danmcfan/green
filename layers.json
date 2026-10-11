@@ -1,6 +1,158 @@
 {
   "layers": [
     {
+      "id": "soil_bulk_density_0cm",
+      "name": "Bulk density (0 cm)",
+      "kind": "input",
+      "units": "kg/m³",
+      "range": [800, 1800],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_bulk_density_30cm",
+      "name": "Bulk density (30 cm)",
+      "kind": "input",
+      "units": "kg/m³",
+      "range": [800, 1800],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_clay_0cm",
+      "name": "Clay (0 cm)",
+      "kind": "input",
+      "units": "%",
+      "range": [0, 60],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_clay_30cm",
+      "name": "Clay (30 cm)",
+      "kind": "input",
+      "units": "%",
+      "range": [0, 60],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_organic_carbon_0cm",
+      "name": "Organic carbon (0 cm)",
+      "kind": "input",
+      "units": "g/kg",
+      "range": [0, 100],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_organic_carbon_30cm",
+      "name": "Organic carbon (30 cm)",
+      "kind": "input",
+      "units": "g/kg",
+      "range": [0, 100],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_ph_0cm",
+      "name": "pH (0 cm)",
+      "kind": "input",
+      "units": "pH",
+      "range": [4, 9],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_ph_30cm",
+      "name": "pH (30 cm)",
+      "kind": "input",
+      "units": "pH",
+      "range": [4, 9],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_sand_0cm",
+      "name": "Sand (0 cm)",
+      "kind": "input",
+      "units": "%",
+      "range": [0, 100],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_sand_30cm",
+      "name": "Sand (30 cm)",
+      "kind": "input",
+      "units": "%",
+      "range": [0, 100],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_water_0cm",
+      "name": "Water content at 33 kPa (0 cm)",
+      "kind": "input",
+      "units": "%",
+      "range": [0, 50],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "soil_water_30cm",
+      "name": "Water content at 33 kPa (30 cm)",
+      "kind": "input",
+      "units": "%",
+      "range": [0, 50],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "climate_dayl",
+      "name": "Day length",
+      "kind": "input",
+      "units": "s",
+      "range": [30000, 55000],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "climate_prcp",
+      "name": "Precipitation",
+      "kind": "input",
+      "units": "mm/month",
+      "range": [0, 300],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "climate_srad",
+      "name": "Shortwave radiation",
+      "kind": "input",
+      "units": "W/m²",
+      "range": [50, 500],
+      "colors": ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
+    },
+    {
+      "id": "climate_swe",
+      "name": "Snow water equivalent",
+      "kind": "input",
+      "units": "kg/m²",
+      "range": [0, 200],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
+      "id": "climate_tmax",
+      "name": "Maximum temperature",
+      "kind": "input",
+      "units": "°C",
+      "range": [-10, 40],
+      "colors": ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
+    },
+    {
+      "id": "climate_tmin",
+      "name": "Minimum temperature",
+      "kind": "input",
+      "units": "°C",
+      "range": [-20, 25],
+      "colors": ["#2c7bb6", "#abd9e9", "#fdae61", "#d7191c"]
+    },
+    {
+      "id": "climate_vp",
+      "name": "Vapor pressure",
+      "kind": "input",
+      "units": "Pa",
+      "range": [0, 3000],
+      "colors": ["#ffffcc", "#a1dab4", "#41b6c4", "#225ea8"]
+    },
+    {
       "id": "observed_ndvi",
       "name": "Observed NDVI",
       "kind": "observed",
@@ -15,6 +167,30 @@
       "units": "NDVI",
       "range": [0, 1],
       "colors": ["#a6611a", "#dfc27d", "#80cdc1", "#018571"]
+    },
+    {
+      "id": "ndvi_residual",
+      "name": "NDVI residual",
+      "kind": "derived",
+      "units": "NDVI",
+      "range": [-0.3, 0.3],
+      "colors": ["#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0"]
+    },
+    {
+      "id": "crop_type",
+      "name": "Crop type",
+      "kind": "derived",
+      "units": "crop group",
+      "range": [0, 8],
+      "colors": ["#ffd300", "#267000", "#a57000", "#d8b56b", "#ff2626", "#ffa5e2", "#e8ffbf", "#00a8e5", "#b9b9b9"]
+    },
+    {
+      "id": "crop_effect",
+      "name": "Crop effect",
+      "kind": "derived",
+      "units": "NDVI",
+      "range": [-0.3, 0.3],
+      "colors": ["#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0"]
     }
   ]
 }
