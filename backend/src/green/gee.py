@@ -1,8 +1,7 @@
 """Earth Engine Source, ported from planet-emu's extract script.
 
 Each request asks computePixels for one chunk of the 4 km grid; a thread pool runs chunks in
-parallel. Asset IDs and band names follow docs/research and issue #7; the VIIRS NDVI scale
-and band names are not yet confirmed against a live run.
+parallel. Asset IDs, band names and NDVI scales were checked against Earth Engine in 2026-10.
 """
 
 import calendar
@@ -15,12 +14,14 @@ import numpy as np
 
 from green.crops import CDL_GROUPS, CROP_GROUPS
 from green.grid import Grid
+from green.layers import LAYERS_FILE
 from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite
 
 logger = logging.getLogger(__name__)
 
 CHUNK = 128
-MAX_PIXELS = 1024
+# NLCD and CDL are 30 m: about 17,750 fine pixels per 4 km cell. 65535 is Earth Engine's limit.
+MAX_PIXELS = 65535
 # A 4 km cell needs at least half of its fine pixels valid (docs/research §3).
 MIN_VALID_SHARE = 0.5
 
@@ -35,16 +36,17 @@ SOIL_ASSETS = {
 DAYMET = "NASA/ORNL/DAYMET_V4"
 DAYMET_BANDS = tuple(layer.removeprefix("climate_") for layer in CLIMATE_LAYERS)
 NDVI_ASSETS = {
-    # (asset, NDVI band, quality band, day-of-year band)
-    "modis": ("MODIS/061/MOD13A1", "NDVI", "SummaryQA", "DayOfYear"),
+    # (asset, NDVI band, quality band, day-of-year band, NDVI scale)
+    "modis": ("MODIS/061/MOD13A1", "NDVI", "SummaryQA", "DayOfYear", 0.0001),
     "viirs": (
         "NASA/VIIRS/002/VNP13A1",
         "NDVI",
         "pixel_reliability",
         "composite_day_of_the_year",
+        # VIIRS v002 stores NDVI already scaled (checked on a live run, 2026-10).
+        1,
     ),
 }
-NDVI_SCALE = 0.0001
 NLCD_2001 = ("USGS/NLCD_RELEASES/2019_REL/NLCD", "2001")
 NLCD_2021 = ("USGS/NLCD_RELEASES/2021_REL/NLCD", "2021")
 NATURAL_NLCD = [41, 42, 43, 51, 52, 71, 72, 73, 74, 90, 95]
@@ -62,8 +64,9 @@ def initialize() -> None:
     import ee
 
     email = os.environ["GEE_EMAIL"]
-    key_file = os.environ.get("GEE_KEY_FILE", "keys/gee-service-account.json")
-    ee.Initialize(ee.ServiceAccountCredentials(email, key_file))
+    # .env paths are relative to the repo root, wherever the pipeline runs from.
+    key_file = LAYERS_FILE.parent / os.environ.get("GEE_KEY_FILE", "keys/gee-service-account.json")
+    ee.Initialize(ee.ServiceAccountCredentials(email, str(key_file)))
 
 
 def _month_ranges(year: int) -> list[tuple[int, int]]:
@@ -134,7 +137,7 @@ class EarthEngineSource:
 
     def ndvi(self, grid: Grid, year: int, satellite: Satellite) -> tuple[np.ndarray, np.ndarray]:
         ee = self.ee
-        asset, ndvi_band, qa_band, doy_band = NDVI_ASSETS[satellite]
+        asset, ndvi_band, qa_band, doy_band, scale = NDVI_ASSETS[satellite]
         # Composites starting in late December hold some early-January observations.
         collection = ee.ImageCollection(asset)
         composites = collection.filterDate(f"{year - 1}-12-01", f"{year + 1}-01-01")
@@ -153,7 +156,7 @@ class EarthEngineSource:
                 this_year = wrapped.eq(from_last_year)
                 # Keep good (0) and marginal (1) pixels observed this month (issue #7).
                 keep = doy.gte(first).And(doy.lte(last)).And(qa.lte(1)).And(this_year)
-                ndvi = image.select(ndvi_band).multiply(NDVI_SCALE).rename("ndvi")
+                ndvi = image.select(ndvi_band).multiply(scale).rename("ndvi")
                 good = qa.eq(0).toFloat().rename("good")
                 return ndvi.addBands(good).updateMask(keep)
 

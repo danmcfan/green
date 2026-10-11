@@ -200,6 +200,10 @@ def train(
 ) -> dict:
     """Evaluate, then fit the final model on every row and save it with its scaler and metadata."""
     rows = build_rows(store)
+    if not len(rows.y):
+        raise ValueError(
+            f"no natural cells (natural cover ≥ {NATURAL_SHARE:.0%}) with Observed NDVI to train on"
+        )
     years = sorted(set(rows.year.tolist()))
     blocks = spatial_blocks(store.grid(), block_km)
     cell_folds = assign_folds(blocks.ravel(), n_folds, seed).reshape(blocks.shape)

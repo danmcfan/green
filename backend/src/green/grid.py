@@ -93,8 +93,9 @@ CONUS = Grid.from_bounds(-125.0, 24.0, -66.5, 49.9375)
 
 REGIONS = {
     "conus": CONUS,
-    # Central Iowa: farm land with natural cells next to it, for quick runs.
-    "small": Grid.from_bounds(-94.0, 41.5, -93.0, 42.5),
+    # The Driftless Area (NE Iowa, SW Wisconsin): forest and farm land side by side, so
+    # quick runs have natural cells to train on and farm cells for the Crop effect.
+    "small": Grid.from_bounds(-92.0, 42.5, -90.5, 43.5),
 }
 
 
