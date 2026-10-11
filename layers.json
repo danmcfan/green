@@ -1,0 +1,20 @@
+{
+  "layers": [
+    {
+      "id": "observed_ndvi",
+      "name": "Observed NDVI",
+      "kind": "observed",
+      "units": "NDVI",
+      "range": [0, 1],
+      "colors": ["#a6611a", "#dfc27d", "#80cdc1", "#018571"]
+    },
+    {
+      "id": "predicted_ndvi",
+      "name": "Predicted NDVI",
+      "kind": "predicted",
+      "units": "NDVI",
+      "range": [0, 1],
+      "colors": ["#a6611a", "#dfc27d", "#80cdc1", "#018571"]
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+name: Deploy
+
+# Builds the site and publishes it to GitHub Pages together with the PMTiles
+# from a GitHub Release (ADR 0002). No Earth Engine credentials are needed here.
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tiles_release:
+        description: Release tag to take PMTiles from (default latest)
+        required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: frontend/package.json
+      - run: bun install --frozen-lockfile
+        working-directory: frontend
+      - run: bun run build
+        working-directory: frontend
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+      - name: Download PMTiles from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tiles_release || github.event.release.tag_name }}
+        run: |
+          if ! gh release view ${TAG:+"$TAG"} >/dev/null 2>&1; then
+            echo "::warning::No release found; deploying without tiles."
+            exit 0
+          fi
+          gh release download ${TAG:+"$TAG"} --pattern '*.pmtiles' --dir frontend/dist/tiles \
+            || echo "::warning::Release has no .pmtiles assets; deploying without tiles."
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: frontend/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
