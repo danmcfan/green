@@ -67,7 +67,7 @@ def test_viirs_years_are_corrected_towards_modis(run):
     assert intercept == pytest.approx(-0.03 / 0.9, abs=0.02)
 
 
-def test_crop_effect_only_on_single_crop_cells_with_regional_error(run):
+def test_crop_effect_only_on_cells_with_a_crop_type_with_regional_error(run):
     data = run / "data" / "small"
     with np.load(data / "crop_effect" / "2012.npz") as f:
         groups, effect = f["groups"], f["effect"]
