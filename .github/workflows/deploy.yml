@@ -39,8 +39,6 @@ jobs:
         working-directory: frontend
       - run: bun run build
         working-directory: frontend
-        env:
-          BASE_PATH: /${{ github.event.repository.name }}/
       - name: Download PMTiles from release
         env:
           GH_TOKEN: ${{ github.token }}
