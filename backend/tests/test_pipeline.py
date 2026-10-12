@@ -70,7 +70,10 @@ def test_crop_effect_only_on_single_crop_cells_with_regional_error(run):
     assert np.isnan(effect[:, groups < 0]).all()
     assert not np.isnan(effect[:, groups >= 0]).all()
     errors = json.loads((data / "crop_effect" / "regional_error.json").read_text())
-    assert errors and all(e["rmse"] > 0 for e in errors.values())
+    # The error next to farm land on unseen places, unseen years and both (ADR 0006).
+    assert set(errors) == {"spatial", "temporal", "combined"}
+    for by_block in errors.values():
+        assert by_block and all(e["rmse"] > 0 for e in by_block.values())
 
 
 def test_publish_keeps_a_new_release_draft_until_every_file_is_uploaded(tmp_path, monkeypatch):

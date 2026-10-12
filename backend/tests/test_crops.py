@@ -9,6 +9,7 @@ from green.crops import (
     near_farm,
     regional_map,
     regional_rmse,
+    worst_error,
 )
 from green.layers import load_layers
 
@@ -74,3 +75,16 @@ def test_crop_type_layer_names_one_color_per_crop_group():
     assert names == list(CROP_GROUPS)
     assert len(crop_type.colors) == len(CROP_GROUPS)
     assert crop_type.range == (0, len(CROP_GROUPS) - 1)
+
+
+def test_worst_error_takes_the_largest_rmse_over_holdouts_for_each_block():
+    errors = {
+        "spatial": {0: {"rmse": 0.1, "cells": 4}, 1: {"rmse": 0.3, "cells": 2}},
+        "temporal": {0: {"rmse": 0.2, "cells": 3}},
+        "combined": {2: {"rmse": 0.05, "cells": 1}},
+    }
+    assert worst_error(errors) == {
+        0: {"rmse": 0.2, "cells": 3},
+        1: {"rmse": 0.3, "cells": 2},
+        2: {"rmse": 0.05, "cells": 1},
+    }
