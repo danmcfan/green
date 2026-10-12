@@ -23,6 +23,11 @@ COVER_CLASSES = ("forest", "shrub", "grass", "wetland", "farm", "other")
 
 
 class Source(Protocol):
+    @property
+    def name(self) -> str:
+        """Where the data comes from, so a saved fit can tell which data it came from."""
+        ...
+
     def soil(self, grid: Grid) -> dict[str, np.ndarray]:
         """One (height, width) array per soil Input layer."""
         ...
@@ -49,6 +54,10 @@ class SyntheticSource:
 
     def __init__(self, seed: int = 0):
         self.seed = seed
+
+    @property
+    def name(self) -> str:
+        return f"synthetic-{self.seed}"
 
     def _rng(self, *key: int) -> np.random.Generator:
         return np.random.default_rng([self.seed, *key])

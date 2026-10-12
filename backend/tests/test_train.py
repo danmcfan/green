@@ -1,6 +1,6 @@
 import numpy as np
 
-from green.train import assign_folds, held_out_years, metrics
+from green.train import HOLDOUTS, Rows, assign_folds, evaluate, held_out_years, metrics
 
 
 def test_folds_keep_each_block_together():
@@ -29,3 +29,33 @@ def test_metrics():
     assert m["rmse"] == np.sqrt(0.125)
     assert m["mae"] == 0.25
     assert m["r2"] == 0.5
+
+
+def _rows(years: list[int], cells: int) -> Rows:
+    rng = np.random.default_rng(0)
+    year, month, cell = (a.ravel() for a in np.meshgrid(years, range(12), range(cells)))
+    x = rng.normal(size=(len(year), 3))
+    return Rows(x, x.sum(axis=1), np.ones(len(year)), year, month, cell // 4, cell % 4)
+
+
+def test_held_out_predictions_cover_unseen_places_unseen_years_and_both():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    folds = (rows.row >= 2).astype(int)
+    _, held_out, predicted, holdout = evaluate(rows, folds, [2013], seed=0)
+
+    assert set(holdout) == set(HOLDOUTS)
+    assert not np.isnan(predicted).any()
+    seen_year = held_out.year < 2013
+    # Unseen places: every past-year row, predicted without its fold.
+    assert (holdout == "spatial").sum() == (rows.year < 2013).sum()
+    assert seen_year[holdout == "spatial"].all()
+    # Unseen years and both: every held-out-year row, once each.
+    for name in ("temporal", "combined"):
+        assert (holdout == name).sum() == (rows.year == 2013).sum()
+        assert not seen_year[holdout == name].any()
+
+
+def test_one_spatial_block_still_gives_unseen_years():
+    rows = _rows([2010, 2011, 2012, 2013], cells=4)
+    _, _, _, holdout = evaluate(rows, np.zeros(len(rows.y), int), [2013], seed=0)
+    assert set(holdout) == {"temporal"}

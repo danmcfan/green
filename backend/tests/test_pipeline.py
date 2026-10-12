@@ -7,8 +7,13 @@ import joblib
 import numpy as np
 import pytest
 
-from green import main
+from green import main, pipeline
+from green.grid import REGIONS
 from green.layers import load_layers
+from green.ndvi import FIRST_VIIRS_YEAR
+from green.pipeline import LAST_MODIS_YEAR
+from green.sources import SyntheticSource
+from green.store import Store
 
 
 @pytest.fixture(scope="module")
@@ -70,7 +75,10 @@ def test_crop_effect_only_on_single_crop_cells_with_regional_error(run):
     assert np.isnan(effect[:, groups < 0]).all()
     assert not np.isnan(effect[:, groups >= 0]).all()
     errors = json.loads((data / "crop_effect" / "regional_error.json").read_text())
-    assert errors and all(e["rmse"] > 0 for e in errors.values())
+    # The error next to farm land on unseen places, unseen years and both (ADR 0006).
+    assert set(errors) == {"spatial", "temporal", "combined"}
+    for by_block in errors.values():
+        assert by_block and all(e["rmse"] > 0 for e in by_block.values())
 
 
 def test_publish_keeps_a_new_release_draft_until_every_file_is_uploaded(tmp_path, monkeypatch):
@@ -150,3 +158,59 @@ def test_publish_uploads_nothing_when_the_files_would_not_fit_on_pages(tmp_path,
     with pytest.raises(limits.TilesOverLimitError, match="Pages"):
         pipeline.publish(tmp_path, "tiles-test")
     assert calls == []
+
+
+class CountingSource(SyntheticSource):
+    """Synthetic data that records which years of NDVI it was asked for, per satellite."""
+
+    def __init__(self, seed=0):
+        super().__init__(seed)
+        self.fetched = []
+
+    def ndvi(self, grid, year, satellite):
+        self.fetched.append((year, satellite))
+        return super().ndvi(grid, year, satellite)
+
+
+def _extract(root, years, source=None):
+    store = Store(root)
+    store.save_grid(REGIONS["small"])
+    pipeline.extract(source or SyntheticSource(), store, years)
+    with np.load(store.path("ndvi_correction")) as f:
+        return f["coeffs"], f["years"]
+
+
+def test_viirs_correction_is_fitted_on_every_overlap_year_whatever_years_a_run_covers(tmp_path):
+    # ADR 0005: two runs with different years must give the same Observed NDVI.
+    one_year, fitted_on = _extract(tmp_path / "a", [2012])
+    other_years, _ = _extract(tmp_path / "b", [2011, 2018, 2019])
+    np.testing.assert_array_equal(one_year, other_years)
+    assert list(fitted_on) == list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
+
+
+def test_viirs_correction_is_fitted_once_per_region_and_reused(tmp_path):
+    first, _ = _extract(tmp_path, [2012])
+    source = CountingSource()
+    again, _ = _extract(tmp_path, [2013, 2014], source)
+    np.testing.assert_array_equal(first, again)
+    assert sorted(source.fetched) == [(2013, "viirs"), (2014, "viirs")]
+
+
+def test_viirs_correction_from_another_source_is_not_reused(tmp_path):
+    # A synthetic run must not leave coefficients that a later run on other data applies.
+    first, _ = _extract(tmp_path, [2012])
+    source = CountingSource(seed=1)
+    again, _ = _extract(tmp_path, [2013], source)
+    assert not np.array_equal(first, again)
+    assert (2012, "viirs") in source.fetched and (2026, "modis") in source.fetched
+    with np.load(Store(tmp_path).path("ndvi_correction")) as f:
+        assert str(f["source"]) == "synthetic-1"
+
+
+def test_modis_only_run_fetches_no_viirs_and_fits_no_correction(tmp_path):
+    source = CountingSource()
+    store = Store(tmp_path)
+    store.save_grid(REGIONS["small"])
+    pipeline.extract(source, store, [2010, 2011])
+    assert sorted(source.fetched) == [(2010, "modis"), (2011, "modis")]
+    assert not store.path("ndvi_correction").exists()

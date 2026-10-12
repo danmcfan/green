@@ -130,7 +130,8 @@ export default function Controls({
       {layer.id === 'crop_effect_error' && (
         <p className="text-sm text-muted-foreground">
           How wrong Predicted NDVI is on natural land next to farm land, in each spatial block over
-          every month. A Crop effect smaller than this cannot be told apart from model error.{' '}
+          every month: the largest error on places, years, or both that the model did not see. A
+          Crop effect smaller than this cannot be told apart from model error.{' '}
           <LayerLink onClick={() => setLayer('crop_effect')}>Show the Crop effect</LayerLink>
         </p>
       )}

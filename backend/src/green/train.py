@@ -23,6 +23,8 @@ INPUT_LAYERS = (*SOIL_LAYERS, *CLIMATE_LAYERS, "month_sin", "month_cos")
 # A cell trains the model only when natural cover fills most of it (docs/research §4).
 NATURAL_SHARE = 0.75
 HELD_OUT_YEARS = 3
+# Unseen places (spatial blocks), unseen years, and both at once.
+HOLDOUTS = ("spatial", "temporal", "combined")
 
 
 def input_stack(soil: dict[str, np.ndarray], climate: dict[str, np.ndarray]) -> np.ndarray:
@@ -158,11 +160,12 @@ def _summarise(per_fold: list[dict[str, dict[str, float]]]) -> dict:
 
 def evaluate(
     rows: Rows, folds: np.ndarray, test_years: list[int], seed: int
-) -> tuple[dict, Rows, np.ndarray]:
+) -> tuple[dict, Rows, np.ndarray, np.ndarray]:
     """Scores for spatial-only, temporal-only and combined holdouts.
 
-    Also returns the spatial out-of-fold rows and their model predictions, for the
-    error on natural cells next to farm land (ADR 0006).
+    Also returns every held-out row, its model prediction and its holdout (one of
+    HOLDOUTS), for the error on natural cells next to farm land (ADR 0006). A row of a
+    held-out year appears twice: once unseen in time only, once unseen in both.
     """
     is_test_year = np.isin(rows.year, test_years)
     report: dict = {"test_years": test_years, "folds": int(folds.max()) + 1}
@@ -170,29 +173,41 @@ def evaluate(
     temporal = _predict_all(rows.take(~is_test_year), rows.take(is_test_year), seed, True)
     test = rows.take(is_test_year)
     report["temporal"] = _summarise([{m: metrics(test.y, p) for m, p in temporal.items()}])
+    held_out = [(test, temporal["gbm"], "temporal")]
 
     past = rows.take(~is_test_year)
     past_folds = folds[~is_test_year]
     if report["folds"] < 2:
         logger.warning("Only one spatial block: skipping spatial and combined holdouts")
-        return report, past.take(np.zeros(len(past.y), bool)), np.array([])
+        return report, *_held_out_rows(held_out)
 
     spatial, combined = [], []
-    oof = np.full(len(past.y), np.nan)
     for k in range(report["folds"]):
         held = past.take(past_folds == k)
         predictions = _predict_all(past.take(past_folds != k), held, seed, False)
-        oof[past_folds == k] = predictions["gbm"]
+        held_out.append((held, predictions["gbm"], "spatial"))
         spatial.append({m: metrics(held.y, p) for m, p in predictions.items()})
 
         unseen = test.take(folds[is_test_year] == k)
         if len(unseen.y):
             predictions = _predict_all(past.take(past_folds != k), unseen, seed, False)
+            held_out.append((unseen, predictions["gbm"], "combined"))
             combined.append({m: metrics(unseen.y, p) for m, p in predictions.items()})
     report["spatial"] = _summarise(spatial)
     if combined:
         report["combined"] = _summarise(combined)
-    return report, past, oof
+    return report, *_held_out_rows(held_out)
+
+
+def _held_out_rows(
+    parts: list[tuple[Rows, np.ndarray, str]],
+) -> tuple[Rows, np.ndarray, np.ndarray]:
+    rows = Rows(
+        *(np.concatenate([getattr(r, f) for r, _, _ in parts]) for f in Rows.__dataclass_fields__)
+    )
+    predicted = np.concatenate([p for _, p, _ in parts])
+    holdout = np.concatenate([np.full(len(p), name) for _, p, name in parts])
+    return rows, predicted, holdout
 
 
 def train(
@@ -211,15 +226,16 @@ def train(
     test_years = held_out_years(years)
 
     logger.info("Evaluating on %d rows from %d years", len(rows.y), len(years))
-    report, oof_rows, oof = evaluate(rows, folds, test_years, seed)
+    report, held_out, predicted, holdout = evaluate(rows, folds, test_years, seed)
     store.save(
-        "train/oof",
-        year=oof_rows.year,
-        month=oof_rows.month,
-        row=oof_rows.row,
-        col=oof_rows.col,
-        observed=oof_rows.y,
-        predicted=oof,
+        "train/held_out",
+        year=held_out.year,
+        month=held_out.month,
+        row=held_out.row,
+        col=held_out.col,
+        observed=held_out.y,
+        predicted=predicted,
+        holdout=holdout,
     )
     store.save("train/blocks", blocks=blocks, folds=cell_folds)
 

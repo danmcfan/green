@@ -18,6 +18,7 @@ from green.crops import (
     near_farm,
     regional_map,
     regional_rmse,
+    worst_error,
 )
 from green.layers import LayerDefinition, load_layers
 from green.limits import check_tiles
@@ -25,14 +26,46 @@ from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
 from green.sources import CLIMATE_LAYERS, SOIL_LAYERS, Source
 from green.store import Store
 from green.tiles import MAX_ZOOM, write_pmtiles
-from green.train import input_stack, natural_cells, train
+from green.train import HOLDOUTS, input_stack, natural_cells, train
 
 logger = logging.getLogger(__name__)
 
 # Terra stops collecting science data in about early 2027 (ADR 0005).
 LAST_MODIS_YEAR = 2026
+# Every year both satellites have data; the VIIRS correction is always fitted on all of them.
+OVERLAP_YEARS = list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
 # A cell counts as farm land, for the error next to farm land, when crops cover half of it.
 FARM_SHARE = 0.5
+
+
+def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np.ndarray:
+    """The VIIRS-to-MODIS correction, fitted once per region on every overlap year (ADR 0005).
+
+    It never depends on the years a run covers, so every run gives the same Observed NDVI
+    for a place and month. A saved correction is reused only if it was fitted on the same
+    years from the same source; otherwise, say after a synthetic run, it is fitted again.
+    """
+    if store.path("ndvi_correction").exists():
+        saved = store.load("ndvi_correction")
+        if (
+            "years" in saved
+            and list(saved["years"]) == OVERLAP_YEARS
+            and "source" in saved
+            and str(saved["source"]) == source.name
+        ):
+            return saved["coeffs"]
+    grid = store.grid()
+    logger.info("Fitting VIIRS correction on %d–%d", OVERLAP_YEARS[0], OVERLAP_YEARS[-1])
+    modis = np.stack([source.ndvi(grid, y, "modis")[0] for y in OVERLAP_YEARS])
+    viirs = np.stack([source.ndvi(grid, y, "viirs")[0] for y in OVERLAP_YEARS])
+    coeffs = fit_correction(modis, viirs, cover_class)
+    store.save(
+        "ndvi_correction",
+        coeffs=coeffs,
+        years=np.array(OVERLAP_YEARS),
+        source=np.array(source.name),
+    )
+    return coeffs
 
 
 def extract(source: Source, store: Store, years: list[int]) -> None:
@@ -43,19 +76,8 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
     natural_share, cover_class = source.land_cover(grid)
     store.save("land_cover", natural_share=natural_share, cover_class=cover_class)
 
-    overlap = [y for y in years if FIRST_VIIRS_YEAR <= y <= LAST_MODIS_YEAR]
-    viirs_years = [y for y in years if y >= FIRST_VIIRS_YEAR]
-    if viirs_years and not overlap:
-        raise ValueError(
-            f"VIIRS years need at least one year in {FIRST_VIIRS_YEAR}–{LAST_MODIS_YEAR} "
-            "to fit the MODIS correction"
-        )
-    if overlap:
-        logger.info("Fitting VIIRS correction on %s", overlap)
-        modis = np.stack([source.ndvi(grid, y, "modis")[0] for y in overlap])
-        viirs = np.stack([source.ndvi(grid, y, "viirs")[0] for y in overlap])
-        coeffs = fit_correction(modis, viirs, cover_class)
-        store.save("ndvi_correction", coeffs=coeffs)
+    if any(y >= FIRST_VIIRS_YEAR for y in years):
+        coeffs = ndvi_correction(source, store, cover_class)
 
     for year in years:
         logger.info("Extracting %d", year)
@@ -86,7 +108,10 @@ def predict(store: Store, model_path: Path) -> None:
 
 
 def crop_effects(store: Store) -> dict:
-    """Crop type and Crop effect per year, and the model error next to farm land per region."""
+    """Crop type and Crop effect per year, and the model error next to farm land per region.
+
+    The error is given for unseen places, unseen years and both (HOLDOUTS).
+    """
     natural = natural_cells(store)
     for year in store.years("crops"):
         shares = store.load(f"crops/{year}")["shares"]
@@ -97,15 +122,23 @@ def crop_effects(store: Store) -> dict:
         farm = shares.sum(axis=0) >= FARM_SHARE
         store.save(f"crop_effect/{year}", groups=groups, effect=effect, farm=farm)
 
-    # Out-of-fold predictions keep this honest: each cell was predicted by a model that
-    # never saw its spatial block.
-    oof = store.load("train/oof")
+    # Held-out predictions keep this honest: each cell was predicted by a model that never
+    # saw its spatial block, its year, or both (ADR 0006).
+    held_out = store.load("train/held_out")
     blocks = store.load("train/blocks")["blocks"]
     near = np.zeros(natural.shape, bool)
     for year in store.years("crop_effect"):
         near |= near_farm(store.load(f"crop_effect/{year}")["farm"], natural)
-    rows, cols = oof["row"], oof["col"]
-    errors = regional_rmse(oof["observed"], oof["predicted"], near[rows, cols], blocks[rows, cols])
+    rows, cols = held_out["row"], held_out["col"]
+    errors = {}
+    for holdout in HOLDOUTS:
+        keep = held_out["holdout"] == holdout
+        errors[holdout] = regional_rmse(
+            held_out["observed"][keep],
+            held_out["predicted"][keep],
+            near[rows, cols][keep],
+            blocks[rows, cols][keep],
+        )
     (store.root / "crop_effect").mkdir(parents=True, exist_ok=True)
     (store.root / "crop_effect" / "regional_error.json").write_text(json.dumps(errors, indent=2))
     return errors
@@ -133,9 +166,11 @@ def _layer_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]
     elif layer_id == "crop_effect":
         yield from monthly("crop_effect", "effect")
     elif layer_id == "crop_effect_error":
+        # The map shows the largest error of the three holdouts, so it is never too low.
         errors = json.loads((store.root / "crop_effect" / "regional_error.json").read_text())
+        by_holdout = {h: {int(b): e for b, e in by_block.items()} for h, by_block in errors.items()}
         blocks = store.load("train/blocks")["blocks"]
-        yield layer_id, regional_map({int(b): e for b, e in errors.items()}, blocks)
+        yield layer_id, regional_map(worst_error(by_holdout), blocks)
     elif layer_id == "crop_type":
         for year in store.years("crop_effect"):
             groups = store.load(f"crop_effect/{year}")["groups"].astype(float)
