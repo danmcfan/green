@@ -1,6 +1,7 @@
 """A tiny fixture run of the whole pipeline on synthetic data."""
 
 import json
+import subprocess
 
 import joblib
 import numpy as np
@@ -70,3 +71,23 @@ def test_crop_effect_only_on_single_crop_cells_with_regional_error(run):
     assert not np.isnan(effect[:, groups >= 0]).all()
     errors = json.loads((data / "crop_effect" / "regional_error.json").read_text())
     assert errors and all(e["rmse"] > 0 for e in errors.values())
+
+
+def test_publish_keeps_a_new_release_draft_until_every_file_is_uploaded(tmp_path, monkeypatch):
+    from green import pipeline
+
+    for layer in ["observed_ndvi", "crop_effect"]:
+        (tmp_path / layer).mkdir()
+        (tmp_path / layer / "2012-07.pmtiles").write_bytes(b"")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 1 if args[2] == "view" else 0)
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+    pipeline.publish(tmp_path, "tiles-test")
+
+    assert [args[2] for args in calls] == ["view", "create", "upload", "edit"]
+    assert "--draft" in calls[1]
+    assert calls[3][-1] == "--draft=false"

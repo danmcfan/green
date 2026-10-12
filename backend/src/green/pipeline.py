@@ -153,12 +153,15 @@ def tiles(
 def publish(out_dir: Path, tag: str) -> None:
     """Upload every PMTiles file to a GitHub Release, creating it if needed (ADR 0002).
 
-    Release assets are flat, so each is named <layer>__<map>.pmtiles.
+    Release assets are flat, so each is named <layer>__<map>.pmtiles. A new release stays a
+    draft until every file is uploaded, because publishing it starts the Deploy workflow.
     """
     files = sorted(out_dir.rglob("*.pmtiles"))
     exists = subprocess.run(["gh", "release", "view", tag], capture_output=True).returncode == 0
     if not exists:
-        subprocess.run(["gh", "release", "create", tag, "--title", tag, "--notes", ""], check=True)
+        subprocess.run(
+            ["gh", "release", "create", tag, "--draft", "--title", tag, "--notes", ""], check=True
+        )
     with tempfile.TemporaryDirectory() as staging:
         assets = []
         for path in files:
@@ -168,6 +171,8 @@ def publish(out_dir: Path, tag: str) -> None:
         for start in range(0, len(assets), 50):
             batch = assets[start : start + 50]
             subprocess.run(["gh", "release", "upload", tag, *batch, "--clobber"], check=True)
+    if not exists:
+        subprocess.run(["gh", "release", "edit", tag, "--draft=false"], check=True)
 
 
 def run(
