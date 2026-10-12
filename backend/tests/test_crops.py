@@ -7,6 +7,7 @@ from green.crops import (
     crop_effect,
     dominant_group,
     near_farm,
+    regional_map,
     regional_rmse,
 )
 from green.layers import load_layers
@@ -58,6 +59,13 @@ def test_regional_rmse_per_block():
     errors = regional_rmse(observed, predicted, mask, blocks)
     assert errors[0] == {"rmse": pytest.approx(0.1), "cells": 2}
     assert errors[1] == {"rmse": pytest.approx(0.3), "cells": 1}
+
+
+def test_regional_map_gives_each_cell_its_block_rmse():
+    blocks = np.array([[0, 0, 1], [2, 2, 1]])
+    errors = {0: {"rmse": 0.1, "cells": 2}, 1: {"rmse": 0.3, "cells": 1}}
+    expected = np.array([[0.1, 0.1, 0.3], [np.nan, np.nan, 0.3]])
+    np.testing.assert_array_equal(regional_map(errors, blocks), expected)
 
 
 def test_crop_type_layer_names_one_color_per_crop_group():

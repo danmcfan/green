@@ -120,10 +120,33 @@ export default function Controls({
         </div>
       )}
 
+      {layer.id === 'crop_effect' && (
+        <p className="text-sm text-muted-foreground">
+          The Crop effect only means something where it is larger than the model&apos;s error on
+          natural land nearby.{' '}
+          <LayerLink onClick={() => setLayer('crop_effect_error')}>Show that error</LayerLink>
+        </p>
+      )}
+      {layer.id === 'crop_effect_error' && (
+        <p className="text-sm text-muted-foreground">
+          How wrong Predicted NDVI is on natural land next to farm land, in each spatial block over
+          every month. A Crop effect smaller than this cannot be told apart from model error.{' '}
+          <LayerLink onClick={() => setLayer('crop_effect')}>Show the Crop effect</LayerLink>
+        </p>
+      )}
+
       {!maps && (
         <p className="text-sm text-muted-foreground">No maps have been published for this layer.</p>
       )}
     </div>
+  )
+}
+
+function LayerLink({ onClick, children }: { onClick: () => void; children: string }) {
+  return (
+    <button type="button" className="text-foreground underline underline-offset-4" onClick={onClick}>
+      {children}
+    </button>
   )
 }
 

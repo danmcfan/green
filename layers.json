@@ -192,6 +192,14 @@
       "units": "NDVI",
       "range": [-0.3, 0.3],
       "colors": ["#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0"]
+    },
+    {
+      "id": "crop_effect_error",
+      "name": "Error next to farm land",
+      "kind": "derived",
+      "units": "NDVI (RMSE)",
+      "range": [0, 0.15],
+      "colors": ["#fee5d9", "#fcae91", "#fb6a4a", "#cb181d"]
     }
   ]
 }

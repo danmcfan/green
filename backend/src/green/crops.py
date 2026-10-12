@@ -82,3 +82,11 @@ def regional_rmse(
             "cells": int(sel.sum()),
         }
     return result
+
+
+def regional_map(errors: dict[int, dict], blocks: np.ndarray) -> np.ndarray:
+    """Each cell's block RMSE from regional_rmse; empty where its block has none."""
+    result = np.full(blocks.shape, np.nan)
+    for block, error in errors.items():
+        result[blocks == block] = error["rmse"]
+    return result
