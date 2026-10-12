@@ -1,0 +1,67 @@
+name: Pipeline
+
+# Runs the backend pipeline against Google Earth Engine, uploads the PMTiles to a GitHub
+# Release, and starts Deploy on main with that Release (ADR 0002). Needs the GEE_EMAIL and
+# GEE_SERVICE_ACCOUNT_KEY repository secrets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: Region to run
+        type: choice
+        options: [small, conus]
+        default: small
+      start:
+        description: First year
+        default: "2011"
+      end:
+        description: Last year
+        default: "2012"
+      tag:
+        description: Release tag (default tiles-<date>-<run number>)
+        required: false
+
+permissions:
+  contents: write # create the Release
+  actions: write # start Deploy
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GEE_EMAIL: ${{ secrets.GEE_EMAIL }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked
+      - name: Write Earth Engine key
+        env:
+          KEY: ${{ secrets.GEE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          if [ -z "$GEE_EMAIL" ] || [ -z "$KEY" ]; then
+            echo "::error::Set the GEE_EMAIL and GEE_SERVICE_ACCOUNT_KEY repository secrets."
+            exit 1
+          fi
+          mkdir -p ../keys
+          printf '%s' "$KEY" > ../keys/gee-service-account.json
+      - name: Run pipeline
+        env:
+          REGION: ${{ inputs.region }}
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+        run: uv run green run --region "$REGION" --start "$START" --end "$END"
+      - name: Publish
+        env:
+          REGION: ${{ inputs.region }}
+          TAG: ${{ inputs.tag }}
+        run: uv run green publish --region "$REGION" --tag "${TAG:-tiles-$(date -u +%F)-$GITHUB_RUN_NUMBER}"

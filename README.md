@@ -55,11 +55,13 @@ Real runs read from Google Earth Engine. Put a service-account key in `keys/` (i
 
 ```sh
 task pipeline -- run --region small --start 2010 --end 2013   # extract → train → predict → crop effect → tiles
-task pipeline -- publish --region small --tag tiles-2026-10   # upload the PMTiles to a GitHub Release
+task pipeline -- publish --region small --tag tiles-2026-10   # upload the PMTiles to a GitHub Release and deploy it
 ```
 
 Each step can also run on its own (`extract`, `train`, `predict`, `crops`, `tiles`). Use `--region conus` for the whole country. Output goes to `data/`, `models/` and `tiles/`, all ignored by git. A year range that includes VIIRS years (2012 on) must include at least one year from 2012–2026, where the VIIRS correction is fitted.
 
 ## Deployment
 
-The `Deploy` workflow builds the site, downloads the latest Release's `*.pmtiles` into it, writes `tiles/index.json` so the map knows which years and months exist, and publishes it to GitHub Pages. It runs on every push to `main`, on each published Release, and by hand. To enable it, set **Settings → Pages → Source** to **GitHub Actions**.
+The `Pipeline` workflow builds the maps in CI. Start it from **Actions → Pipeline → Run workflow** and choose the region and years (or run `gh workflow run pipeline.yml -f region=small -f start=2011 -f end=2012`). It runs the pipeline against Earth Engine and uploads the PMTiles to a new Release. Then it starts `Deploy` with that Release. It needs two repository secrets: `GEE_EMAIL` and `GEE_SERVICE_ACCOUNT_KEY` (the contents of the service-account JSON key).
+
+The `Deploy` workflow builds the site, downloads a Release's `*.pmtiles` into it (the latest one, unless it is given a tag), writes `tiles/index.json` so the map knows which years and months exist, and publishes it to GitHub Pages. It runs on every push to `main`, after each `publish`, and by hand. To enable it, set **Settings → Pages → Source** to **GitHub Actions**.

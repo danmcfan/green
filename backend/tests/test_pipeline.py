@@ -88,6 +88,40 @@ def test_publish_keeps_a_new_release_draft_until_every_file_is_uploaded(tmp_path
     monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
     pipeline.publish(tmp_path, "tiles-test")
 
-    assert [args[2] for args in calls] == ["view", "create", "upload", "edit"]
+    assert [args[1:3] for args in calls] == [
+        ["release", "view"],
+        ["release", "create"],
+        ["release", "upload"],
+        ["release", "edit"],
+        ["workflow", "run"],
+    ]
     assert "--draft" in calls[1]
     assert calls[3][-1] == "--draft=false"
+
+
+def test_publish_deploys_the_release_from_main(tmp_path, monkeypatch):
+    # The github-pages environment only accepts deploys from main, so a Release event
+    # (which runs on the tag) cannot deploy; publish starts Deploy on main instead.
+    from green import pipeline
+
+    (tmp_path / "observed_ndvi").mkdir()
+    (tmp_path / "observed_ndvi" / "2012-07.pmtiles").write_bytes(b"")
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(pipeline.subprocess, "run", fake_run)
+    pipeline.publish(tmp_path, "tiles-test")
+
+    assert calls[-1] == [
+        "gh",
+        "workflow",
+        "run",
+        "deploy.yml",
+        "--ref",
+        "main",
+        "-f",
+        "tiles_release=tiles-test",
+    ]

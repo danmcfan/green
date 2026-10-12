@@ -165,7 +165,8 @@ def publish(out_dir: Path, tag: str) -> None:
     """Upload every PMTiles file to a GitHub Release, creating it if needed (ADR 0002).
 
     Release assets are flat, so each is named <layer>__<map>.pmtiles. A new release stays a
-    draft until every file is uploaded, because publishing it starts the Deploy workflow.
+    draft until every file is uploaded, so a push to main never deploys half a release. Then
+    Deploy is started on main: the github-pages environment only accepts deploys from main.
     """
     files = sorted(out_dir.rglob("*.pmtiles"))
     exists = subprocess.run(["gh", "release", "view", tag], capture_output=True).returncode == 0
@@ -184,6 +185,10 @@ def publish(out_dir: Path, tag: str) -> None:
             subprocess.run(["gh", "release", "upload", tag, *batch, "--clobber"], check=True)
     if not exists:
         subprocess.run(["gh", "release", "edit", tag, "--draft=false"], check=True)
+    subprocess.run(
+        ["gh", "workflow", "run", "deploy.yml", "--ref", "main", "-f", f"tiles_release={tag}"],
+        check=True,
+    )
 
 
 def run(

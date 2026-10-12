@@ -3,11 +3,11 @@ name: Deploy
 # Builds the site and publishes it to GitHub Pages together with the PMTiles
 # from a GitHub Release (ADR 0002). No Earth Engine credentials are needed here.
 
+# A Release event cannot deploy: it runs on the tag, and the github-pages environment only
+# accepts main. So `green publish` starts this workflow on main with the new tag instead.
 on:
   push:
     branches: [main]
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tiles_release:
@@ -42,7 +42,7 @@ jobs:
       - name: Download PMTiles from release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tiles_release || github.event.release.tag_name }}
+          TAG: ${{ inputs.tiles_release }}
         run: |
           if ! gh release view ${TAG:+"$TAG"} >/dev/null 2>&1; then
             echo "::warning::No release found; deploying without tiles."
