@@ -19,7 +19,12 @@ from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite
 
 logger = logging.getLogger(__name__)
 
+# Cells per side of one computePixels request, for the coarse inputs (soil, climate, NDVI).
 CHUNK = 128
+# NLCD and CDL are 30 m, so reduceResolution reprojects about 133 × 133 fine pixels per 4 km
+# cell. Earth Engine refuses chunks above about 50 cells with "Reprojection output too large
+# (7640x10274 pixels)" for 65 cells, while 49 cells work (checked 2026-10-12, issue #20).
+FINE_CHUNK = 48
 # NLCD and CDL are 30 m: about 17,750 fine pixels per 4 km cell. 65535 is Earth Engine's limit.
 MAX_PIXELS = 65535
 # A 4 km cell needs at least half of its fine pixels valid (docs/research §3).
@@ -84,7 +89,7 @@ class EarthEngineSource:
         self.ee = ee
         self.workers = workers
 
-    def _fetch(self, image, grid: Grid, bands: list[str]) -> np.ndarray:
+    def _fetch(self, image, grid: Grid, bands: list[str], chunk: int = CHUNK) -> np.ndarray:
         """Pixels for every band, as (band, height, width) floats with NaN where masked."""
         out = np.full((len(bands), *grid.shape), np.nan, dtype=np.float32)
 
@@ -98,7 +103,7 @@ class EarthEngineSource:
                 values = np.ma.filled(np.ma.asarray(data[band]).astype(np.float32), np.nan)
                 out[i, row : row + sub.height, col : col + sub.width] = values
 
-        chunks = grid.chunks(CHUNK)
+        chunks = grid.chunks(chunk)
         logger.info("Fetching %d bands over %d chunks", len(bands), len(chunks))
         with ThreadPoolExecutor(self.workers) as pool:
             list(pool.map(one, chunks))
@@ -198,7 +203,7 @@ class EarthEngineSource:
             ee.Reducer.mode(), maxPixels=MAX_PIXELS
         )
         image = self._coarsen(natural).rename("natural").addBands(cover.rename("cover"))
-        share, cover_class = self._fetch(image, grid, ["natural", "cover"])
+        share, cover_class = self._fetch(image, grid, ["natural", "cover"], FINE_CHUNK)
         return share, np.nan_to_num(cover_class, nan=other).astype(np.int8)
 
     def crop_shares(self, grid: Grid, year: int) -> np.ndarray:
@@ -209,4 +214,5 @@ class EarthEngineSource:
             cropland.remap(list(CDL_GROUPS[g]), [1] * len(CDL_GROUPS[g]), 0).toFloat().rename(g)
             for g in CROP_GROUPS
         ]
-        return self._fetch(self._coarsen(ee.Image.cat(bands)), grid, list(CROP_GROUPS))
+        image = self._coarsen(ee.Image.cat(bands))
+        return self._fetch(image, grid, list(CROP_GROUPS), FINE_CHUNK)
