@@ -7,8 +7,13 @@ import joblib
 import numpy as np
 import pytest
 
-from green import main
+from green import main, pipeline
+from green.grid import REGIONS
 from green.layers import load_layers
+from green.ndvi import FIRST_VIIRS_YEAR
+from green.pipeline import LAST_MODIS_YEAR
+from green.sources import SyntheticSource
+from green.store import Store
 
 
 @pytest.fixture(scope="module")
@@ -125,3 +130,48 @@ def test_publish_deploys_the_release_from_main(tmp_path, monkeypatch):
         "-f",
         "tiles_release=tiles-test",
     ]
+
+
+class CountingSource(SyntheticSource):
+    """Synthetic data that records which years of NDVI it was asked for, per satellite."""
+
+    def __init__(self):
+        super().__init__()
+        self.fetched = []
+
+    def ndvi(self, grid, year, satellite):
+        self.fetched.append((year, satellite))
+        return super().ndvi(grid, year, satellite)
+
+
+def _extract(root, years, source=None):
+    store = Store(root)
+    store.save_grid(REGIONS["small"])
+    pipeline.extract(source or SyntheticSource(), store, years)
+    with np.load(store.path("ndvi_correction")) as f:
+        return f["coeffs"], f["years"]
+
+
+def test_viirs_correction_is_fitted_on_every_overlap_year_whatever_years_a_run_covers(tmp_path):
+    # ADR 0005: two runs with different years must give the same Observed NDVI.
+    one_year, fitted_on = _extract(tmp_path / "a", [2012])
+    other_years, _ = _extract(tmp_path / "b", [2011, 2018, 2019])
+    np.testing.assert_array_equal(one_year, other_years)
+    assert list(fitted_on) == list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
+
+
+def test_viirs_correction_is_fitted_once_per_region_and_reused(tmp_path):
+    first, _ = _extract(tmp_path, [2012])
+    source = CountingSource()
+    again, _ = _extract(tmp_path, [2013, 2014], source)
+    np.testing.assert_array_equal(first, again)
+    assert sorted(source.fetched) == [(2013, "viirs"), (2014, "viirs")]
+
+
+def test_modis_only_run_fetches_no_viirs_and_fits_no_correction(tmp_path):
+    source = CountingSource()
+    store = Store(tmp_path)
+    store.save_grid(REGIONS["small"])
+    pipeline.extract(source, store, [2010, 2011])
+    assert sorted(source.fetched) == [(2010, "modis"), (2011, "modis")]
+    assert not store.path("ndvi_correction").exists()
