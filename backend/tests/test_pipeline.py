@@ -135,6 +135,31 @@ def test_publish_deploys_the_release_from_main(tmp_path, monkeypatch):
     ]
 
 
+def test_tiles_fails_when_the_files_would_not_fit_in_a_release(run, tmp_path, monkeypatch):
+    from green import limits, pipeline
+    from green.store import Store
+
+    monkeypatch.setattr(limits, "RELEASE_MAX_ASSETS", 12)
+    layers = {"observed_ndvi": load_layers()["observed_ndvi"]}
+    store = Store(run / "data" / "small")
+    with pytest.raises(limits.TilesOverLimitError, match="48 PMTiles files"):
+        pipeline.tiles(store, tmp_path, layers, max_zoom=2)
+
+
+def test_publish_uploads_nothing_when_the_files_would_not_fit_on_pages(tmp_path, monkeypatch):
+    from green import limits, pipeline
+
+    (tmp_path / "observed_ndvi").mkdir()
+    (tmp_path / "observed_ndvi" / "2012-07.pmtiles").write_bytes(b"x" * 100)
+    monkeypatch.setattr(limits, "PAGES_MAX_SITE_BYTES", 50)
+    calls = []
+    monkeypatch.setattr(pipeline.subprocess, "run", lambda args, **kwargs: calls.append(args))
+
+    with pytest.raises(limits.TilesOverLimitError, match="Pages"):
+        pipeline.publish(tmp_path, "tiles-test")
+    assert calls == []
+
+
 class CountingSource(SyntheticSource):
     """Synthetic data that records which years of NDVI it was asked for, per satellite."""
 
