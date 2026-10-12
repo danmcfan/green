@@ -34,22 +34,32 @@ CDL_GROUPS: dict[str, tuple[int, ...]] = {
     "other_crops": tuple(c for c in _CULTIVATED if c not in _TAKEN),
 }
 
+# Crop type categories: the 9 crop groups, then corn/soybean rotation. The rotation is a
+# Crop type only, not a crop group to fetch: it is read from the corn and soybean shares.
+CROP_TYPES = (*CROP_GROUPS, "corn_soybean")
+ROTATION = CROP_TYPES.index("corn_soybean")
+_CORN, _SOYBEANS = CROP_GROUPS.index("corn"), CROP_GROUPS.index("soybeans")
+
 FIRST_CDL_YEAR = 2008
 DOMINANT_SHARE = 0.75
 
 
 def dominant_group(fractions: np.ndarray, share: float = DOMINANT_SHARE) -> np.ndarray:
-    """Index of the crop group covering at least `share` of each cell, or -1.
+    """Crop type index of each cell (CROP_TYPES order), or -1 for none (ADR 0006).
 
+    A cell takes the crop group covering at least `share` of it. Failing that, it takes
+    ROTATION when corn and soybeans together cover at least `share`.
     `fractions` has one (height, width) band per crop group, in CROP_GROUPS order.
     """
     fractions = np.nan_to_num(fractions)
     best = fractions.argmax(axis=0)
-    return np.where(fractions.max(axis=0) >= share, best, -1).astype(np.int8)
+    rotation = fractions[_CORN] + fractions[_SOYBEANS] >= share
+    single = fractions.max(axis=0) >= share
+    return np.where(single, best, np.where(rotation, ROTATION, -1)).astype(np.int8)
 
 
 def crop_effect(observed: np.ndarray, predicted: np.ndarray, groups: np.ndarray) -> np.ndarray:
-    """Observed minus Predicted NDVI on single-crop cells; empty elsewhere."""
+    """Observed minus Predicted NDVI on cells with a Crop type; empty elsewhere."""
     return np.where(groups >= 0, observed - predicted, np.nan)
 
 
