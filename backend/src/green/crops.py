@@ -84,6 +84,16 @@ def regional_rmse(
     return result
 
 
+def worst_error(errors: dict[str, dict[int, dict]]) -> dict[int, dict]:
+    """For each block, the regional_rmse entry with the largest RMSE over every holdout."""
+    worst: dict[int, dict] = {}
+    for by_block in errors.values():
+        for block, error in by_block.items():
+            if block not in worst or error["rmse"] > worst[block]["rmse"]:
+                worst[block] = error
+    return worst
+
+
 def regional_map(errors: dict[int, dict], blocks: np.ndarray) -> np.ndarray:
     """Each cell's block RMSE from regional_rmse; empty where its block has none."""
     result = np.full(blocks.shape, np.nan)

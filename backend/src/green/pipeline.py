@@ -18,13 +18,14 @@ from green.crops import (
     near_farm,
     regional_map,
     regional_rmse,
+    worst_error,
 )
 from green.layers import LayerDefinition, load_layers
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
 from green.sources import CLIMATE_LAYERS, SOIL_LAYERS, Source
 from green.store import Store
 from green.tiles import MAX_ZOOM, write_pmtiles
-from green.train import input_stack, natural_cells, train
+from green.train import HOLDOUTS, input_stack, natural_cells, train
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,10 @@ def predict(store: Store, model_path: Path) -> None:
 
 
 def crop_effects(store: Store) -> dict:
-    """Crop type and Crop effect per year, and the model error next to farm land per region."""
+    """Crop type and Crop effect per year, and the model error next to farm land per region.
+
+    The error is given for unseen places, unseen years and both (HOLDOUTS).
+    """
     natural = natural_cells(store)
     for year in store.years("crops"):
         shares = store.load(f"crops/{year}")["shares"]
@@ -117,15 +121,23 @@ def crop_effects(store: Store) -> dict:
         farm = shares.sum(axis=0) >= FARM_SHARE
         store.save(f"crop_effect/{year}", groups=groups, effect=effect, farm=farm)
 
-    # Out-of-fold predictions keep this honest: each cell was predicted by a model that
-    # never saw its spatial block.
-    oof = store.load("train/oof")
+    # Held-out predictions keep this honest: each cell was predicted by a model that never
+    # saw its spatial block, its year, or both (ADR 0006).
+    held_out = store.load("train/held_out")
     blocks = store.load("train/blocks")["blocks"]
     near = np.zeros(natural.shape, bool)
     for year in store.years("crop_effect"):
         near |= near_farm(store.load(f"crop_effect/{year}")["farm"], natural)
-    rows, cols = oof["row"], oof["col"]
-    errors = regional_rmse(oof["observed"], oof["predicted"], near[rows, cols], blocks[rows, cols])
+    rows, cols = held_out["row"], held_out["col"]
+    errors = {}
+    for holdout in HOLDOUTS:
+        keep = held_out["holdout"] == holdout
+        errors[holdout] = regional_rmse(
+            held_out["observed"][keep],
+            held_out["predicted"][keep],
+            near[rows, cols][keep],
+            blocks[rows, cols][keep],
+        )
     (store.root / "crop_effect").mkdir(parents=True, exist_ok=True)
     (store.root / "crop_effect" / "regional_error.json").write_text(json.dumps(errors, indent=2))
     return errors
@@ -153,9 +165,11 @@ def _layer_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]
     elif layer_id == "crop_effect":
         yield from monthly("crop_effect", "effect")
     elif layer_id == "crop_effect_error":
+        # The map shows the largest error of the three holdouts, so it is never too low.
         errors = json.loads((store.root / "crop_effect" / "regional_error.json").read_text())
+        by_holdout = {h: {int(b): e for b, e in by_block.items()} for h, by_block in errors.items()}
         blocks = store.load("train/blocks")["blocks"]
-        yield layer_id, regional_map({int(b): e for b, e in errors.items()}, blocks)
+        yield layer_id, regional_map(worst_error(by_holdout), blocks)
     elif layer_id == "crop_type":
         for year in store.years("crop_effect"):
             groups = store.load(f"crop_effect/{year}")["groups"].astype(float)

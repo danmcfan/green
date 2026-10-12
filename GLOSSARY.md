@@ -29,7 +29,7 @@ Observed NDVI minus Predicted NDVI on natural land, for a place and month; where
 _Avoid_: Error map, anomaly
 
 **Error next to farm land**:
-How wrong Predicted NDVI is on natural land next to farm land, as the RMSE over every month in each spatial block. A Crop effect smaller than this cannot be told apart from model error.
+How wrong Predicted NDVI is on natural land next to farm land, as the RMSE over every month in each spatial block. It is measured on unseen places, unseen years and both, and the map shows the largest of the three. A Crop effect smaller than this cannot be told apart from model error.
 
 **Spatial block**:
 A square of land (200 km by default) that the model is scored on without having seen it; the Error next to farm land is given for each one.
