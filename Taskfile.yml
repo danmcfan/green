@@ -15,6 +15,13 @@ tasks:
     dir: frontend
     cmd: bun run dev {{.CLI_ARGS}}
 
+  tiles:local:
+    desc: "Serve the pipeline's PMTiles from the dev server, e.g. task tiles:local REGION=conus"
+    dir: frontend
+    vars:
+      REGION: '{{.REGION | default "small"}}'
+    cmd: bun scripts/tiles.ts stage ../tiles/{{.REGION}} public/tiles
+
   lint:
     desc: Lint backend and frontend
     cmds:
@@ -37,9 +44,18 @@ tasks:
     cmd: uv run ruff format
 
   test:
-    desc: Run backend tests
+    desc: Run backend and frontend tests
+    cmds:
+      - task: test:backend
+      - task: test:frontend
+
+  test:backend:
     dir: backend
     cmd: uv run pytest
+
+  test:frontend:
+    dir: frontend
+    cmd: bun run test
 
   pipeline:
     desc: "Run the backend pipeline, e.g. task pipeline -- run --region small --source synthetic"

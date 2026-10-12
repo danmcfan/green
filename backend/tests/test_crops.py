@@ -9,6 +9,7 @@ from green.crops import (
     near_farm,
     regional_rmse,
 )
+from green.layers import load_layers
 
 
 def test_nine_crop_groups_with_disjoint_cdl_codes():
@@ -57,3 +58,11 @@ def test_regional_rmse_per_block():
     errors = regional_rmse(observed, predicted, mask, blocks)
     assert errors[0] == {"rmse": pytest.approx(0.1), "cells": 2}
     assert errors[1] == {"rmse": pytest.approx(0.3), "cells": 1}
+
+
+def test_crop_type_layer_names_one_color_per_crop_group():
+    crop_type = load_layers()["crop_type"]
+    names = [name.lower().replace(" ", "_").replace("/", "_") for name in crop_type.categories]
+    assert names == list(CROP_GROUPS)
+    assert len(crop_type.colors) == len(CROP_GROUPS)
+    assert crop_type.range == (0, len(CROP_GROUPS) - 1)

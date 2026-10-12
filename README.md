@@ -4,7 +4,7 @@ How green should this land be, given only its soil and climate?
 
 Green trains a model to predict satellite NDVI (a measure of how green vegetation is) across the continental United States, each month from 2001 to the present, from soil and climate data alone. It then shows the inputs, the observed greenness and the prediction on a web map. Comparing the prediction with what satellites see shows where the model fails, and how much greener or less green farm land is than natural land would be.
 
-> **Status:** early. The pipeline runs end to end and is tested on synthetic data. It has not yet run against Earth Engine. The map UI is being built ([#6](https://github.com/danmcfan/green/issues/6)).
+> **Status:** early. The pipeline runs end to end and is tested on synthetic data. It has not yet run against Earth Engine.
 
 ## How it works
 
@@ -41,6 +41,8 @@ task dev     # map at http://localhost:5173
 task check   # lint, test and build: everything CI runs
 ```
 
+To see your own pipeline output on the local map, run `task tiles:local` (or `task tiles:local REGION=conus`) after the pipeline. It links `tiles/<region>/` into `frontend/public/tiles/` under the same names the Release uses, with an `index.json` listing them.
+
 ## Running the pipeline
 
 Try it without credentials. This runs every step on a small region with synthetic data and writes PMTiles to `tiles/small/`:
@@ -60,4 +62,4 @@ Each step can also run on its own (`extract`, `train`, `predict`, `crops`, `tile
 
 ## Deployment
 
-The `Deploy` workflow builds the site, downloads the latest Release's `*.pmtiles` into it, and publishes it to GitHub Pages. It runs on every push to `main`, on each published Release, and by hand. To enable it, set **Settings → Pages → Source** to **GitHub Actions**.
+The `Deploy` workflow builds the site, downloads the latest Release's `*.pmtiles` into it, writes `tiles/index.json` so the map knows which years and months exist, and publishes it to GitHub Pages. It runs on every push to `main`, on each published Release, and by hand. To enable it, set **Settings → Pages → Source** to **GitHub Actions**.

@@ -17,7 +17,7 @@ NDVI calculated by the model from the input layers for a place and month.
 _Avoid_: Estimated NDVI, modelled NDVI
 
 **Layer definition**:
-The single record of a layer's id, units, value range and colors, shared by every part of the project.
+The single record of a layer's id, units, value range and colors (and, for a layer of categories such as Crop type, their names), shared by every part of the project.
 _Avoid_: Layer config, layer schema
 
 **Crop effect**:

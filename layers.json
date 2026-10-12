@@ -182,7 +182,8 @@
       "kind": "derived",
       "units": "crop group",
       "range": [0, 8],
-      "colors": ["#ffd300", "#267000", "#a57000", "#d8b56b", "#ff2626", "#ffa5e2", "#e8ffbf", "#00a8e5", "#b9b9b9"]
+      "colors": ["#ffd300", "#267000", "#a57000", "#d8b56b", "#ff2626", "#ffa5e2", "#e8ffbf", "#00a8e5", "#b9b9b9"],
+      "categories": ["Corn", "Soybeans", "Winter wheat", "Spring wheat", "Cotton", "Alfalfa", "Other hay/pasture", "Rice", "Other crops"]
     },
     {
       "id": "crop_effect",
