@@ -23,3 +23,10 @@ _Avoid_: Layer config, layer schema
 **Crop effect**:
 How much greener or less green a crop makes a place than natural land would be: Observed NDVI minus the Predicted NDVI for natural land, for a place and month.
 _Avoid_: Crop gap, NDVI difference, anomaly
+
+**NDVI residual**:
+Observed NDVI minus Predicted NDVI on natural land, for a place and month; where the model is wrong.
+_Avoid_: Error map, anomaly
+
+**Derived layer**:
+A layer calculated from other layers rather than measured or predicted directly: the NDVI residual, Crop type and Crop effect.

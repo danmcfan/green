@@ -1,7 +1,7 @@
 // Typed view of the shared Layer definition file (ADR 0004).
 import file from '../../../layers.json'
 
-export type LayerKind = 'input' | 'observed' | 'predicted'
+export type LayerKind = 'input' | 'observed' | 'predicted' | 'derived'
 
 export interface LayerDefinition {
   id: string

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, get_args
 
-Kind = Literal["input", "observed", "predicted"]
+Kind = Literal["input", "observed", "predicted", "derived"]
 
 LAYERS_FILE = Path(__file__).resolve().parents[3] / "layers.json"
 
