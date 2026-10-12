@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from green.grid import CELL, CONUS, Grid, spatial_blocks
+from green.grid import CELL, CONUS, REGIONS, Grid, spatial_blocks
 
 
 def on_lattice(value):
@@ -61,3 +61,11 @@ def test_spatial_blocks_group_nearby_cells():
     assert blocks[0, 0] != blocks[0, -1]
     # About 340 km wide by 220 km tall: 2 columns by 2 rows of 200 km blocks.
     assert len(np.unique(blocks)) == 4
+
+
+def test_ohio_valley_is_241_by_145_cells():
+    grid = REGIONS["ohio_valley"]
+    assert (grid.width, grid.height) == (241, 145)
+    xmin, ymin, xmax, ymax = grid.bounds
+    assert xmin <= -88 < xmin + 1 / 24 and xmax >= -78 > xmax - 1 / 24
+    assert ymin <= 36 < ymin + 1 / 24 and ymax >= 42 > ymax - 1 / 24
