@@ -32,4 +32,5 @@ jobs:
           bun-version-file: frontend/package.json
       - run: bun install --frozen-lockfile
       - run: bun run lint
+      - run: bun run test
       - run: bun run build

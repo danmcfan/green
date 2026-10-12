@@ -182,7 +182,8 @@
       "kind": "derived",
       "units": "crop group",
       "range": [0, 8],
-      "colors": ["#ffd300", "#267000", "#a57000", "#d8b56b", "#ff2626", "#ffa5e2", "#e8ffbf", "#00a8e5", "#b9b9b9"]
+      "colors": ["#ffd300", "#267000", "#a57000", "#d8b56b", "#ff2626", "#ffa5e2", "#e8ffbf", "#00a8e5", "#b9b9b9"],
+      "categories": ["Corn", "Soybeans", "Winter wheat", "Spring wheat", "Cotton", "Alfalfa", "Other hay/pasture", "Rice", "Other crops"]
     },
     {
       "id": "crop_effect",
@@ -191,6 +192,14 @@
       "units": "NDVI",
       "range": [-0.3, 0.3],
       "colors": ["#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0"]
+    },
+    {
+      "id": "crop_effect_error",
+      "name": "Error next to farm land",
+      "kind": "derived",
+      "units": "NDVI (RMSE)",
+      "range": [0, 0.15],
+      "colors": ["#fee5d9", "#fcae91", "#fb6a4a", "#cb181d"]
     }
   ]
 }

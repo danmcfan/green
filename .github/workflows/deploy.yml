@@ -52,6 +52,9 @@ jobs:
           fi
           gh release download ${TAG:+"$TAG"} --pattern '*.pmtiles' --dir frontend/dist/tiles \
             || echo "::warning::Release has no .pmtiles assets; deploying without tiles."
+      - name: Index PMTiles
+        run: mkdir -p dist/tiles && bun scripts/tiles.ts index dist/tiles
+        working-directory: frontend
       - uses: actions/upload-pages-artifact@v4
         with:
           path: frontend/dist

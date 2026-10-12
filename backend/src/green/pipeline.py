@@ -11,7 +11,14 @@ from pathlib import Path
 import joblib
 import numpy as np
 
-from green.crops import FIRST_CDL_YEAR, crop_effect, dominant_group, near_farm, regional_rmse
+from green.crops import (
+    FIRST_CDL_YEAR,
+    crop_effect,
+    dominant_group,
+    near_farm,
+    regional_map,
+    regional_rmse,
+)
 from green.layers import LayerDefinition, load_layers
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
 from green.sources import CLIMATE_LAYERS, SOIL_LAYERS, Source
@@ -124,6 +131,10 @@ def _layer_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]
         yield from monthly("predict", "residual")
     elif layer_id == "crop_effect":
         yield from monthly("crop_effect", "effect")
+    elif layer_id == "crop_effect_error":
+        errors = json.loads((store.root / "crop_effect" / "regional_error.json").read_text())
+        blocks = store.load("train/blocks")["blocks"]
+        yield layer_id, regional_map({int(b): e for b, e in errors.items()}, blocks)
     elif layer_id == "crop_type":
         for year in store.years("crop_effect"):
             groups = store.load(f"crop_effect/{year}")["groups"].astype(float)

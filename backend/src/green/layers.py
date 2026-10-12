@@ -18,6 +18,8 @@ class LayerDefinition:
     units: str
     range: tuple[float, float]
     colors: tuple[str, ...]
+    # Names of the classes 0, 1, 2… for a layer whose values are classes, not amounts.
+    categories: tuple[str, ...] = ()
 
 
 def _parse(raw: dict) -> LayerDefinition:
@@ -36,6 +38,7 @@ def _parse(raw: dict) -> LayerDefinition:
         units=raw["units"],
         range=(low, high),
         colors=tuple(raw["colors"]),
+        categories=tuple(raw.get("categories", ())),
     )
 
 

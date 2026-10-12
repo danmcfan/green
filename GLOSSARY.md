@@ -17,7 +17,7 @@ NDVI calculated by the model from the input layers for a place and month.
 _Avoid_: Estimated NDVI, modelled NDVI
 
 **Layer definition**:
-The single record of a layer's id, units, value range and colors, shared by every part of the project.
+The single record of a layer's id, units, value range and colors (and, for a layer of categories such as Crop type, their names), shared by every part of the project.
 _Avoid_: Layer config, layer schema
 
 **Crop effect**:
@@ -28,5 +28,12 @@ _Avoid_: Crop gap, NDVI difference, anomaly
 Observed NDVI minus Predicted NDVI on natural land, for a place and month; where the model is wrong.
 _Avoid_: Error map, anomaly
 
+**Error next to farm land**:
+How wrong Predicted NDVI is on natural land next to farm land, as the RMSE over every month in each spatial block. A Crop effect smaller than this cannot be told apart from model error.
+
+**Spatial block**:
+A square of land (200 km by default) that the model is scored on without having seen it; the Error next to farm land is given for each one.
+_Avoid_: Region (that is the area a pipeline run covers, such as `small` or `conus`)
+
 **Derived layer**:
-A layer calculated from other layers rather than measured or predicted directly: the NDVI residual, Crop type and Crop effect.
+A layer calculated from other layers rather than measured or predicted directly: the NDVI residual, Crop type, Crop effect and Error next to farm land.
