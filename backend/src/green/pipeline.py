@@ -20,6 +20,7 @@ from green.crops import (
     regional_rmse,
 )
 from green.layers import LayerDefinition, load_layers
+from green.limits import check_tiles
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
 from green.sources import CLIMATE_LAYERS, SOIL_LAYERS, Source
 from green.store import Store
@@ -149,7 +150,11 @@ def tiles(
     layers: dict[str, LayerDefinition] | None = None,
     max_zoom: int = MAX_ZOOM,
 ) -> list[Path]:
-    """One PMTiles file per layer map, at out_dir/<layer>/<name>.pmtiles."""
+    """One PMTiles file per layer map, at out_dir/<layer>/<name>.pmtiles.
+
+    Fails if the files would not fit in a GitHub Release or on GitHub Pages, so a run that is
+    too big is caught here rather than part way through publish.
+    """
     grid = store.grid()
     written = []
     for layer in (layers or load_layers()).values():
@@ -158,6 +163,7 @@ def tiles(
             write_pmtiles(path, values, grid, layer, max_zoom=max_zoom)
             written.append(path)
         logger.info("Wrote tiles for %s", layer.id)
+    logger.info("Wrote %s", check_tiles(written))
     return written
 
 
@@ -167,8 +173,10 @@ def publish(out_dir: Path, tag: str) -> None:
     Release assets are flat, so each is named <layer>__<map>.pmtiles. A new release stays a
     draft until every file is uploaded, so a push to main never deploys half a release. Then
     Deploy is started on main: the github-pages environment only accepts deploys from main.
+    Nothing is uploaded if the files would not fit in a Release or on Pages.
     """
     files = sorted(out_dir.rglob("*.pmtiles"))
+    logger.info("Publishing %s", check_tiles(files))
     exists = subprocess.run(["gh", "release", "view", tag], capture_output=True).returncode == 0
     if not exists:
         subprocess.run(

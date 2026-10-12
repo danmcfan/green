@@ -58,7 +58,7 @@ task pipeline -- run --region small --start 2010 --end 2013   # extract → trai
 task pipeline -- publish --region small --tag tiles-2026-10   # upload the PMTiles to a GitHub Release and deploy it
 ```
 
-Each step can also run on its own (`extract`, `train`, `predict`, `crops`, `tiles`). Use `--region conus` for the whole country. Output goes to `data/`, `models/` and `tiles/`, all ignored by git. A year range that includes VIIRS years (2012 on) must include at least one year from 2012–2026, where the VIIRS correction is fitted.
+`tiles` and `publish` fail if the PMTiles would not fit within the GitHub Release or Pages limits (file count, largest file, total size), which are set in `backend/src/green/limits.py`. Each step can also run on its own (`extract`, `train`, `predict`, `crops`, `tiles`). Use `--region conus` for the whole country. Output goes to `data/`, `models/` and `tiles/`, all ignored by git. A year range that includes VIIRS years (2012 on) must include at least one year from 2012–2026, where the VIIRS correction is fitted.
 
 ## Deployment
 
