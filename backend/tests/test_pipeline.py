@@ -135,8 +135,8 @@ def test_publish_deploys_the_release_from_main(tmp_path, monkeypatch):
 class CountingSource(SyntheticSource):
     """Synthetic data that records which years of NDVI it was asked for, per satellite."""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, seed=0):
+        super().__init__(seed)
         self.fetched = []
 
     def ndvi(self, grid, year, satellite):
@@ -166,6 +166,17 @@ def test_viirs_correction_is_fitted_once_per_region_and_reused(tmp_path):
     again, _ = _extract(tmp_path, [2013, 2014], source)
     np.testing.assert_array_equal(first, again)
     assert sorted(source.fetched) == [(2013, "viirs"), (2014, "viirs")]
+
+
+def test_viirs_correction_from_another_source_is_not_reused(tmp_path):
+    # A synthetic run must not leave coefficients that a later run on other data applies.
+    first, _ = _extract(tmp_path, [2012])
+    source = CountingSource(seed=1)
+    again, _ = _extract(tmp_path, [2013], source)
+    assert not np.array_equal(first, again)
+    assert (2012, "viirs") in source.fetched and (2026, "modis") in source.fetched
+    with np.load(Store(tmp_path).path("ndvi_correction")) as f:
+        assert str(f["source"]) == "synthetic-1"
 
 
 def test_modis_only_run_fetches_no_viirs_and_fits_no_correction(tmp_path):

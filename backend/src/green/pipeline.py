@@ -40,18 +40,29 @@ def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np
     """The VIIRS-to-MODIS correction, fitted once per region on every overlap year (ADR 0005).
 
     It never depends on the years a run covers, so every run gives the same Observed NDVI
-    for a place and month. A saved correction is reused unless it was fitted on other years.
+    for a place and month. A saved correction is reused only if it was fitted on the same
+    years from the same source; otherwise, say after a synthetic run, it is fitted again.
     """
     if store.path("ndvi_correction").exists():
         saved = store.load("ndvi_correction")
-        if "years" in saved and list(saved["years"]) == OVERLAP_YEARS:
+        if (
+            "years" in saved
+            and list(saved["years"]) == OVERLAP_YEARS
+            and "source" in saved
+            and str(saved["source"]) == source.name
+        ):
             return saved["coeffs"]
     grid = store.grid()
     logger.info("Fitting VIIRS correction on %d–%d", OVERLAP_YEARS[0], OVERLAP_YEARS[-1])
     modis = np.stack([source.ndvi(grid, y, "modis")[0] for y in OVERLAP_YEARS])
     viirs = np.stack([source.ndvi(grid, y, "viirs")[0] for y in OVERLAP_YEARS])
     coeffs = fit_correction(modis, viirs, cover_class)
-    store.save("ndvi_correction", coeffs=coeffs, years=np.array(OVERLAP_YEARS))
+    store.save(
+        "ndvi_correction",
+        coeffs=coeffs,
+        years=np.array(OVERLAP_YEARS),
+        source=np.array(source.name),
+    )
     return coeffs
 
 
