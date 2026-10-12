@@ -30,8 +30,40 @@ logger = logging.getLogger(__name__)
 
 # Terra stops collecting science data in about early 2027 (ADR 0005).
 LAST_MODIS_YEAR = 2026
+# Every year both satellites have data; the VIIRS correction is always fitted on all of them.
+OVERLAP_YEARS = list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
 # A cell counts as farm land, for the error next to farm land, when crops cover half of it.
 FARM_SHARE = 0.5
+
+
+def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np.ndarray:
+    """The VIIRS-to-MODIS correction, fitted once per region on every overlap year (ADR 0005).
+
+    It never depends on the years a run covers, so every run gives the same Observed NDVI
+    for a place and month. A saved correction is reused only if it was fitted on the same
+    years from the same source; otherwise, say after a synthetic run, it is fitted again.
+    """
+    if store.path("ndvi_correction").exists():
+        saved = store.load("ndvi_correction")
+        if (
+            "years" in saved
+            and list(saved["years"]) == OVERLAP_YEARS
+            and "source" in saved
+            and str(saved["source"]) == source.name
+        ):
+            return saved["coeffs"]
+    grid = store.grid()
+    logger.info("Fitting VIIRS correction on %d–%d", OVERLAP_YEARS[0], OVERLAP_YEARS[-1])
+    modis = np.stack([source.ndvi(grid, y, "modis")[0] for y in OVERLAP_YEARS])
+    viirs = np.stack([source.ndvi(grid, y, "viirs")[0] for y in OVERLAP_YEARS])
+    coeffs = fit_correction(modis, viirs, cover_class)
+    store.save(
+        "ndvi_correction",
+        coeffs=coeffs,
+        years=np.array(OVERLAP_YEARS),
+        source=np.array(source.name),
+    )
+    return coeffs
 
 
 def extract(source: Source, store: Store, years: list[int]) -> None:
@@ -42,19 +74,8 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
     natural_share, cover_class = source.land_cover(grid)
     store.save("land_cover", natural_share=natural_share, cover_class=cover_class)
 
-    overlap = [y for y in years if FIRST_VIIRS_YEAR <= y <= LAST_MODIS_YEAR]
-    viirs_years = [y for y in years if y >= FIRST_VIIRS_YEAR]
-    if viirs_years and not overlap:
-        raise ValueError(
-            f"VIIRS years need at least one year in {FIRST_VIIRS_YEAR}–{LAST_MODIS_YEAR} "
-            "to fit the MODIS correction"
-        )
-    if overlap:
-        logger.info("Fitting VIIRS correction on %s", overlap)
-        modis = np.stack([source.ndvi(grid, y, "modis")[0] for y in overlap])
-        viirs = np.stack([source.ndvi(grid, y, "viirs")[0] for y in overlap])
-        coeffs = fit_correction(modis, viirs, cover_class)
-        store.save("ndvi_correction", coeffs=coeffs)
+    if any(y >= FIRST_VIIRS_YEAR for y in years):
+        coeffs = ndvi_correction(source, store, cover_class)
 
     for year in years:
         logger.info("Extracting %d", year)

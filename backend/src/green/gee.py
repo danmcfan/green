@@ -76,6 +76,8 @@ def _month_ranges(year: int) -> list[tuple[int, int]]:
 
 
 class EarthEngineSource:
+    name = "gee"
+
     def __init__(self, workers: int = 10):
         import ee
 
