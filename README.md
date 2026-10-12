@@ -62,6 +62,4 @@ Each step can also run on its own (`extract`, `train`, `predict`, `crops`, `tile
 
 ## Deployment
 
-The `Pipeline` workflow builds the maps in CI. Start it from **Actions → Pipeline → Run workflow** and choose the region and years (or run `gh workflow run pipeline.yml -f region=small -f start=2011 -f end=2012`). It runs the pipeline against Earth Engine and uploads the PMTiles to a new Release. Then it starts `Deploy` with that Release. It needs two repository secrets: `GEE_EMAIL` and `GEE_SERVICE_ACCOUNT_KEY` (the contents of the service-account JSON key).
-
 The `Deploy` workflow builds the site, downloads a Release's `*.pmtiles` into it (the latest one, unless it is given a tag), writes `tiles/index.json` so the map knows which years and months exist, and publishes it to GitHub Pages. It runs on every push to `main`, after each `publish`, and by hand. To enable it, set **Settings → Pages → Source** to **GitHub Actions**.
