@@ -96,6 +96,10 @@ REGIONS = {
     # The Driftless Area (NE Iowa, SW Wisconsin): forest and farm land side by side, so
     # quick runs have natural cells to train on and farm cells for the Crop effect.
     "small": Grid.from_bounds(-92.0, 42.5, -90.5, 43.5),
+    # The Ohio Valley (issue #15): Appalachian and southern Indiana forest next to the corn and
+    # soybean land of Ohio, Indiana and Kentucky. Unlike `small`, it has enough natural cells,
+    # in enough spatial blocks, for the model scores to mean something.
+    "ohio_valley": Grid.from_bounds(-88.0, 36.0, -78.0, 42.0),
 }
 
 

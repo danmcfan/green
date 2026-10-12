@@ -19,8 +19,19 @@ from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite
 
 logger = logging.getLogger(__name__)
 
+# Cells per side of one computePixels request, for soil and climate.
 CHUNK = 128
-# NLCD and CDL are 30 m: about 17,750 fine pixels per 4 km cell. 65535 is Earth Engine's limit.
+# NDVI reduces a year of composites per cell. Over ohio_valley, VIIRS timed out once at 128
+# cells and took 514 s on a retry, against 157 s at 64 cells (checked 2026-10-12, issue #20).
+NDVI_CHUNK = 64
+# NLCD and CDL are 30 m, so reduceResolution reads about 133 × 133 (17,750) fine pixels per
+# 4 km cell.
+#
+# Larger 30 m chunks fail with "Reprojection output too large (7640x10274 pixels)": 65 cells
+# failed and 49 worked (checked 2026-10-12, issue #20).
+MAX_FINE_CHUNK = 49
+FINE_CHUNK = 48
+# Earth Engine's limit on fine pixels per coarse pixel in reduceResolution.
 MAX_PIXELS = 65535
 # A 4 km cell needs at least half of its fine pixels valid (docs/research §3).
 MIN_VALID_SHARE = 0.5
@@ -84,7 +95,7 @@ class EarthEngineSource:
         self.ee = ee
         self.workers = workers
 
-    def _fetch(self, image, grid: Grid, bands: list[str]) -> np.ndarray:
+    def _fetch(self, image, grid: Grid, bands: list[str], chunk_size: int = CHUNK) -> np.ndarray:
         """Pixels for every band, as (band, height, width) floats with NaN where masked."""
         out = np.full((len(bands), *grid.shape), np.nan, dtype=np.float32)
 
@@ -98,7 +109,7 @@ class EarthEngineSource:
                 values = np.ma.filled(np.ma.asarray(data[band]).astype(np.float32), np.nan)
                 out[i, row : row + sub.height, col : col + sub.width] = values
 
-        chunks = grid.chunks(CHUNK)
+        chunks = grid.chunks(chunk_size)
         logger.info("Fetching %d bands over %d chunks", len(bands), len(chunks))
         with ThreadPoolExecutor(self.workers) as pool:
             list(pool.map(one, chunks))
@@ -176,7 +187,8 @@ class EarthEngineSource:
             enough = share.gte(MIN_VALID_SHARE)
             bands.append(coarse.updateMask(enough).rename([f"ndvi_{month}", f"good_{month}"]))
         names = [f"{kind}_{m}" for m in range(1, 13) for kind in ("ndvi", "good")]
-        values = self._fetch(ee.Image.cat(bands), grid, names).reshape(12, 2, *grid.shape)
+        values = self._fetch(ee.Image.cat(bands), grid, names, NDVI_CHUNK)
+        values = values.reshape(12, 2, *grid.shape)
         return values[:, 0], values[:, 1]
 
     def land_cover(self, grid: Grid) -> tuple[np.ndarray, np.ndarray]:
@@ -198,7 +210,7 @@ class EarthEngineSource:
             ee.Reducer.mode(), maxPixels=MAX_PIXELS
         )
         image = self._coarsen(natural).rename("natural").addBands(cover.rename("cover"))
-        share, cover_class = self._fetch(image, grid, ["natural", "cover"])
+        share, cover_class = self._fetch(image, grid, ["natural", "cover"], FINE_CHUNK)
         return share, np.nan_to_num(cover_class, nan=other).astype(np.int8)
 
     def crop_shares(self, grid: Grid, year: int) -> np.ndarray:
@@ -209,4 +221,5 @@ class EarthEngineSource:
             cropland.remap(list(CDL_GROUPS[g]), [1] * len(CDL_GROUPS[g]), 0).toFloat().rename(g)
             for g in CROP_GROUPS
         ]
-        return self._fetch(self._coarsen(ee.Image.cat(bands)), grid, list(CROP_GROUPS))
+        image = self._coarsen(ee.Image.cat(bands))
+        return self._fetch(image, grid, list(CROP_GROUPS), FINE_CHUNK)
