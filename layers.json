@@ -180,7 +180,7 @@
       "id": "crop_type",
       "name": "Crop type",
       "kind": "derived",
-      "units": "crop group",
+      "units": "crop type",
       "range": [0, 9],
       "colors": ["#ffd300", "#267000", "#a57000", "#d8b56b", "#ff2626", "#ffa5e2", "#e8ffbf", "#00a8e5", "#b9b9b9", "#93a200"],
       "categories": ["Corn", "Soybeans", "Winter wheat", "Spring wheat", "Cotton", "Alfalfa", "Other hay/pasture", "Rice", "Other crops", "Corn/soybean"]
