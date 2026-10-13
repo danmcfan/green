@@ -4,7 +4,6 @@ from typing import Literal, Protocol
 
 import numpy as np
 
-from green.crops import CROP_GROUPS
 from green.grid import Grid
 
 Satellite = Literal["modis", "viirs"]
@@ -42,10 +41,6 @@ class Source(Protocol):
 
     def land_cover(self, grid: Grid) -> tuple[np.ndarray, np.ndarray]:
         """Share of each cell under natural cover, and its main COVER_CLASSES index."""
-        ...
-
-    def crop_shares(self, grid: Grid, year: int) -> np.ndarray:
-        """Share of each cell in each crop group, (9, height, width) in CROP_GROUPS order."""
         ...
 
 
@@ -114,12 +109,3 @@ class SyntheticSource:
         # Alternating bands of farm and natural land, three cells wide.
         col = np.arange(grid.width)[None, :].repeat(grid.height, 0)
         return np.where((col // 3) % 2 == 0, 0.9, 0.05)
-
-    def crop_shares(self, grid: Grid, year: int) -> np.ndarray:
-        farm = self._farm_share(grid)
-        row = np.arange(grid.height)[:, None].repeat(grid.width, 1)
-        group = (row // 4 + year) % len(CROP_GROUPS)
-        shares = np.zeros((len(CROP_GROUPS), *grid.shape))
-        for g in range(len(CROP_GROUPS)):
-            shares[g] = np.where(group == g, farm, 0)
-        return shares

@@ -12,7 +12,7 @@ from green.grid import REGIONS
 from green.layers import load_layers
 from green.ndvi import FIRST_VIIRS_YEAR
 from green.pipeline import LAST_MODIS_YEAR
-from green.sources import SyntheticSource
+from green.sources import COVER_CLASSES, SyntheticSource
 from green.store import Store
 
 
@@ -42,10 +42,7 @@ def test_writes_pmtiles_for_every_layer(run):
         assert any((tiles / layer_id).glob("*.pmtiles")), layer_id
     assert (tiles / "soil_clay_0cm" / "soil_clay_0cm.pmtiles").exists()
     assert len(list((tiles / "observed_ndvi").glob("*.pmtiles"))) == 4 * 12
-    # CDL starts in 2008, so every year here has crop maps.
-    assert sorted(p.stem for p in (tiles / "crop_type").glob("*.pmtiles")) == [
-        "2010", "2011", "2012", "2013"
-    ]  # fmt: skip
+    assert len(list((tiles / "crop_effect").glob("*.pmtiles"))) == 4 * 12
 
 
 def test_saves_model_with_scaler_metadata_and_scores(run):
@@ -67,13 +64,15 @@ def test_viirs_years_are_corrected_towards_modis(run):
     assert intercept == pytest.approx(-0.03 / 0.9, abs=0.02)
 
 
-def test_crop_effect_only_on_cells_with_a_crop_type_with_regional_error(run):
+def test_crop_effect_only_on_farm_land_with_regional_error(run):
     data = run / "data" / "small"
+    with np.load(data / "land_cover.npz") as f:
+        farm = f["cover_class"] == COVER_CLASSES.index("farm")
     with np.load(data / "crop_effect" / "2012.npz") as f:
-        groups, effect = f["groups"], f["effect"]
-    assert (groups >= 0).any() and (groups < 0).any()
-    assert np.isnan(effect[:, groups < 0]).all()
-    assert not np.isnan(effect[:, groups >= 0]).all()
+        effect = f["effect"]
+    assert farm.any() and (~farm).any()
+    assert np.isnan(effect[:, ~farm]).all()
+    assert not np.isnan(effect[:, farm]).all()
     errors = json.loads((data / "crop_effect" / "regional_error.json").read_text())
     # The error next to farm land on unseen places, unseen years and both (ADR 0006).
     assert set(errors) == {"spatial", "temporal", "combined"}
@@ -226,7 +225,7 @@ def test_extract_reuses_every_file_a_failed_or_earlier_run_saved(tmp_path):
     store = _store(tmp_path)
     pipeline.extract(SyntheticSource(), store, [2010, 2011])
     source = CountingSource()
-    source.soil = source.land_cover = source.climate = source.crop_shares = None  # never called
+    source.soil = source.land_cover = source.climate = None  # never called
     pipeline.extract(source, store, [2010, 2011])
     assert source.fetched == []
 

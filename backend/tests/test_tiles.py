@@ -4,9 +4,8 @@ import numpy as np
 from PIL import Image
 from pmtiles.reader import MmapSource, Reader
 
-from green.crops import CROP_TYPES
 from green.grid import Grid
-from green.layers import LayerDefinition, load_layers
+from green.layers import LayerDefinition
 from green.tiles import colorize, render_tile, tiles_covering, write_pmtiles
 
 LAYER = LayerDefinition(
@@ -31,14 +30,6 @@ def test_colorize_interpolates_stops_and_clamps():
 
 def test_colorize_leaves_missing_values_transparent():
     assert colorize(np.array([[np.nan]]), LAYER)[0, 0, 3] == 0
-
-
-def test_colorize_draws_each_crop_type_in_its_own_color():
-    layer = load_layers()["crop_type"]
-    rgba = colorize(np.arange(len(CROP_TYPES), dtype=float)[None, :], layer)
-    for index, color in enumerate(layer.colors):
-        hex_color = "#" + "".join(f"{c:02x}" for c in rgba[0, index, :3])
-        assert hex_color == color.lower()
 
 
 def test_tiles_covering_a_small_grid():

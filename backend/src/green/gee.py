@@ -13,7 +13,6 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-from green.crops import CDL_GROUPS, CROP_GROUPS
 from green.grid import Grid
 from green.layers import LAYERS_FILE
 from green.progress import Progress
@@ -26,7 +25,7 @@ CHUNK = 128
 # NDVI reduces a year of composites per cell. Over ohio_valley, VIIRS timed out once at 128
 # cells and took 514 s on a retry, against 157 s at 64 cells (checked 2026-10-12, issue #20).
 NDVI_CHUNK = 64
-# NLCD and CDL are 30 m, so reduceResolution reads about 133 × 133 (17,750) fine pixels per
+# NLCD is 30 m, so reduceResolution reads about 133 × 133 (17,750) fine pixels per
 # 4 km cell.
 #
 # Larger 30 m chunks fail with "Reprojection output too large (7640x10274 pixels)": 65 cells
@@ -72,7 +71,6 @@ NLCD_COVER = {
     "wetland": [90, 95],
     "farm": [81, 82],
 }
-CDL = "USDA/NASS/CDL"
 
 
 def initialize() -> None:
@@ -237,14 +235,3 @@ class EarthEngineSource:
             "land cover", image, grid, ["natural", "cover"], FINE_CHUNK
         )
         return share, np.nan_to_num(cover_class, nan=other).astype(np.int8)
-
-    def crop_shares(self, grid: Grid, year: int) -> np.ndarray:
-        ee = self.ee
-        cdl = ee.ImageCollection(CDL).filterDate(f"{year}-01-01", f"{year + 1}-01-01")
-        cropland = cdl.first().select("cropland")
-        bands = [
-            cropland.remap(list(CDL_GROUPS[g]), [1] * len(CDL_GROUPS[g]), 0).toFloat().rename(g)
-            for g in CROP_GROUPS
-        ]
-        image = self._coarsen(ee.Image.cat(bands))
-        return self._fetch(f"crop shares {year}", image, grid, list(CROP_GROUPS), FINE_CHUNK)
