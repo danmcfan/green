@@ -5,7 +5,7 @@ import logging
 import os
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import joblib
@@ -69,28 +69,77 @@ def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np
     return coeffs
 
 
+def _cached(store: Store, name: str, source: Source, fetch: Callable[[], dict]) -> dict:
+    """A saved extract file if it came from this source, else fetch and save it.
+
+    A run that fails part way keeps every file it finished; `green clear` deletes them.
+    """
+    if store.path(name).exists():
+        saved = store.load(name)
+        if "source" in saved and str(saved.pop("source")) == source.name:
+            logger.info("Using saved %s", name)
+            return saved
+    arrays = fetch()
+    store.save(name, source=np.array(source.name), **arrays)
+    return arrays
+
+
 def extract(source: Source, store: Store, years: list[int]) -> None:
     """Fetch soil once, then climate, Observed NDVI and crop shares per year."""
     grid = store.grid()
     logger.info("Extracting soil and land cover")
-    store.save("soil", **source.soil(grid))
-    natural_share, cover_class = source.land_cover(grid)
-    store.save("land_cover", natural_share=natural_share, cover_class=cover_class)
+    _cached(store, "soil", source, lambda: source.soil(grid))
 
-    if any(y >= FIRST_VIIRS_YEAR for y in years):
-        coeffs = ndvi_correction(source, store, cover_class)
+    def land_cover():
+        natural_share, cover_class = source.land_cover(grid)
+        return {"natural_share": natural_share, "cover_class": cover_class}
+
+    cover_class = _cached(store, "land_cover", source, land_cover)["cover_class"]
 
     for i, year in enumerate(years, start=1):
         logger.info("Extracting %d (year %d of %d)", year, i, len(years))
-        store.save(f"climate/{year}", **source.climate(grid, year))
-        if year < FIRST_VIIRS_YEAR:
-            ndvi, good = source.ndvi(grid, year, "modis")
-        else:
-            ndvi, good = source.ndvi(grid, year, "viirs")
-            ndvi = apply_correction(ndvi, cover_class, coeffs)
-        store.save(f"ndvi/{year}", ndvi=ndvi, good_share=good)
+        _cached(store, f"climate/{year}", source, lambda year=year: source.climate(grid, year))
+
+        def ndvi(year=year):
+            if year < FIRST_VIIRS_YEAR:
+                ndvi, good = source.ndvi(grid, year, "modis")
+            else:
+                coeffs = ndvi_correction(source, store, cover_class)
+                ndvi, good = source.ndvi(grid, year, "viirs")
+                ndvi = apply_correction(ndvi, cover_class, coeffs)
+            return {"ndvi": ndvi, "good_share": good}
+
+        _cached(store, f"ndvi/{year}", source, ndvi)
         if year >= FIRST_CDL_YEAR:
-            store.save(f"crops/{year}", shares=source.crop_shares(grid, year))
+            _cached(
+                store,
+                f"crops/{year}",
+                source,
+                lambda year=year: {"shares": source.crop_shares(grid, year)},
+            )
+
+
+EXTRACTED = ["soil", "land_cover", "ndvi_correction", "climate", "ndvi", "crops"]
+
+
+def clear(store: Store, only: list[str] | None = None) -> list[Path]:
+    """Delete saved extract files, so the next run fetches them again.
+
+    `only` names files or folders under the region, e.g. ["land_cover", "ndvi/2012", "climate"];
+    without it every extract file goes. Training, prediction and tiles are made again on
+    every run, so they are never cached and need no clearing.
+    """
+    removed = []
+    for name in only or EXTRACTED:
+        folder = store.root / name
+        paths = sorted(folder.glob("*.npz")) if folder.is_dir() else [store.path(name)]
+        if only and not any(p.exists() for p in paths):
+            raise FileNotFoundError(f"nothing saved for {name!r} in {store.root}")
+        for path in paths:
+            if path.exists():
+                path.unlink()
+                removed.append(path)
+    return removed
 
 
 def predict(store: Store, model_path: Path) -> None:

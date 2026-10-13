@@ -29,7 +29,7 @@ def _source(name: str, workers: int):
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="green", description=__doc__)
     parser.add_argument(
-        "step", choices=["run", "extract", "train", "predict", "crops", "tiles", "publish"]
+        "step", choices=["run", "extract", "train", "predict", "crops", "tiles", "publish", "clear"]
     )
     parser.add_argument("--region", choices=sorted(REGIONS), default="small")
     parser.add_argument("--source", choices=["gee", "synthetic"], default="gee")
@@ -42,6 +42,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--models-dir", type=Path, default=ROOT / "models")
     parser.add_argument("--tiles-dir", type=Path, default=ROOT / "tiles")
     parser.add_argument("--tag", help="GitHub Release tag for publish")
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        help="for clear: saved files or folders to delete, e.g. land_cover ndvi/2012 climate",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -82,3 +87,6 @@ def main(argv: list[str] | None = None) -> None:
             if not args.tag:
                 parser.error("publish needs --tag")
             pipeline.publish(tiles_dir, args.tag)
+        case "clear":
+            removed = pipeline.clear(store, args.only)
+            logging.info("Deleted %d saved files from %s", len(removed), store.root)

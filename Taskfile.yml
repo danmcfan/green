@@ -67,6 +67,11 @@ tasks:
     dir: backend
     cmd: uv run green run --region small --source synthetic --start 2010 --end 2013 --block-km 25
 
+  pipeline:clear:
+    desc: "Delete a region's saved extract data, e.g. task pipeline:clear REGION=conus -- --only land_cover ndvi/2012"
+    dir: backend
+    cmd: uv run green clear --region {{.REGION | default "small"}} {{.CLI_ARGS}}
+
   build:
     desc: Typecheck and build the frontend
     dir: frontend

@@ -214,3 +214,54 @@ def test_modis_only_run_fetches_no_viirs_and_fits_no_correction(tmp_path):
     pipeline.extract(source, store, [2010, 2011])
     assert sorted(source.fetched) == [(2010, "modis"), (2011, "modis")]
     assert not store.path("ndvi_correction").exists()
+
+
+def _store(root):
+    store = Store(root)
+    store.save_grid(REGIONS["small"])
+    return store
+
+
+def test_extract_reuses_every_file_a_failed_or_earlier_run_saved(tmp_path):
+    store = _store(tmp_path)
+    pipeline.extract(SyntheticSource(), store, [2010, 2011])
+    source = CountingSource()
+    source.soil = source.land_cover = source.climate = source.crop_shares = None  # never called
+    pipeline.extract(source, store, [2010, 2011])
+    assert source.fetched == []
+
+
+def test_extract_fetches_again_what_another_source_saved(tmp_path):
+    store = _store(tmp_path)
+    pipeline.extract(SyntheticSource(), store, [2010])
+    source = CountingSource(seed=1)
+    pipeline.extract(source, store, [2010])
+    assert source.fetched == [(2010, "modis")]
+
+
+def test_clear_only_deletes_the_named_files_and_folders(tmp_path):
+    store = _store(tmp_path)
+    pipeline.extract(SyntheticSource(), store, [2010, 2011])
+    removed = pipeline.clear(store, ["ndvi/2011", "climate"])
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in removed) == [
+        "climate/2010.npz",
+        "climate/2011.npz",
+        "ndvi/2011.npz",
+    ]
+    source = CountingSource()
+    pipeline.extract(source, store, [2010, 2011])
+    assert source.fetched == [(2011, "modis")]
+
+
+def test_clear_deletes_every_extract_file_but_keeps_the_grid(tmp_path):
+    store = _store(tmp_path)
+    pipeline.extract(SyntheticSource(), store, [2012])
+    pipeline.clear(store)
+    assert not list(tmp_path.rglob("*.npz"))
+    assert (tmp_path / "grid.json").exists()
+
+
+def test_clear_fails_on_a_name_with_nothing_saved(tmp_path):
+    store = _store(tmp_path)
+    with pytest.raises(FileNotFoundError, match="land_cvoer"):
+        pipeline.clear(store, ["land_cvoer"])
