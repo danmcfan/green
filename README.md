@@ -16,7 +16,7 @@ Earth Engine ──extract──▶ grid arrays ──train──▶ model ─�
 - **Input layers:** soil from OpenLandMap (bulk density, clay, organic carbon, pH, sand, water content, at 0 and 30 cm), and monthly climate from Daymet (precipitation, temperature, radiation, vapor pressure, snow, day length).
 - **Observed NDVI:** MODIS Terra for 2001–2011, then VIIRS from 2012, with VIIRS corrected to match MODIS by a fit for each land cover class and month ([ADR 0005](docs/adr/0005-modis-then-viirs-observed-ndvi.md)).
 - **Model:** gradient boosting, trained on natural land only (forest, shrub, grass, wetland), with pixel quality as a training weight. Scores are reported for unseen places (spatial blocks), unseen years, and both together, against simple baselines. Random cross-validation would overstate the scores ([research](docs/research/ndvi-target-and-evaluation.md)).
-- **Crop effect:** the natural-land model is run on farm land. Observed minus Predicted NDVI is the Crop effect for 9 crop groups from the USDA Cropland Data Layer (2008 on), and for corn/soybean rotation: cells where corn and soybeans together cover 75% but no one group does. Next to it, the map shows the Error next to farm land: the model's error on natural land beside farm land, for each spatial block, the largest of its errors on unseen places, unseen years and both ([ADR 0006](docs/adr/0006-crop-effect-from-natural-cover-model.md)).
+- **Crop effect:** the natural-land model is run on farm land: cells whose main NLCD land cover class is farm (pasture/hay or cultivated crops). Observed minus Predicted NDVI there is the Crop effect. Next to it, the map shows the Error next to farm land: the model's error on natural land beside farm land, for each spatial block, the largest of its errors on unseen places, unseen years and both ([ADR 0006](docs/adr/0006-crop-effect-from-natural-cover-model.md)).
 - **Delivery:** every map is computed ahead of time as raster PMTiles. The site is static and needs no server ([ADR 0001](docs/adr/0001-static-site-on-github-pages.md), [ADR 0002](docs/adr/0002-pmtiles-published-from-github-releases.md)).
 
 Terms such as Input layer, Observed NDVI and Crop effect have exact meanings, defined in [GLOSSARY.md](GLOSSARY.md).
@@ -27,7 +27,7 @@ Terms such as Input layer, Observed NDVI and Crop effect have exact meanings, de
 |---|---|
 | `backend/` | Python pipeline (uv, ruff, pytest, scikit-learn, Earth Engine API) |
 | `frontend/` | Static map site (Vite, React, shadcn, MapLibre, bun) |
-| `layers.json` | The Layer definition file (id, units, range, colors, and category names for Crop type), read by both backend and frontend ([ADR 0004](docs/adr/0004-single-layer-definition-file.md)) |
+| `layers.json` | The Layer definition file (id, units, range and colors), read by both backend and frontend ([ADR 0004](docs/adr/0004-single-layer-definition-file.md)) |
 | `docs/` | Decision records (`adr/`) and research notes |
 | `Taskfile.yml` | Task runner for everything below |
 

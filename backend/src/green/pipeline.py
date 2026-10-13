@@ -12,9 +12,7 @@ import joblib
 import numpy as np
 
 from green.crops import (
-    FIRST_CDL_YEAR,
     crop_effect,
-    dominant_group,
     near_farm,
     regional_map,
     regional_rmse,
@@ -24,7 +22,7 @@ from green.layers import LayerDefinition, load_layers
 from green.limits import check_tiles
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
 from green.progress import Progress, step
-from green.sources import CLIMATE_LAYERS, SOIL_LAYERS, Source
+from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Source
 from green.store import Store
 from green.tiles import MAX_ZOOM, write_pmtiles
 from green.train import HOLDOUTS, input_stack, natural_cells, train
@@ -35,8 +33,6 @@ logger = logging.getLogger(__name__)
 LAST_MODIS_YEAR = 2026
 # Every year both satellites have data; the VIIRS correction is always fitted on all of them.
 OVERLAP_YEARS = list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
-# A cell counts as farm land, for the error next to farm land, when crops cover half of it.
-FARM_SHARE = 0.5
 
 
 def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np.ndarray:
@@ -85,7 +81,7 @@ def _cached(store: Store, name: str, source: Source, fetch: Callable[[], dict]) 
 
 
 def extract(source: Source, store: Store, years: list[int]) -> None:
-    """Fetch soil once, then climate, Observed NDVI and crop shares per year."""
+    """Fetch soil and land cover once, then climate and Observed NDVI per year."""
     grid = store.grid()
     logger.info("Extracting soil and land cover")
     _cached(store, "soil", source, lambda: source.soil(grid))
@@ -110,16 +106,9 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
             return {"ndvi": ndvi, "good_share": good}
 
         _cached(store, f"ndvi/{year}", source, ndvi)
-        if year >= FIRST_CDL_YEAR:
-            _cached(
-                store,
-                f"crops/{year}",
-                source,
-                lambda year=year: {"shares": source.crop_shares(grid, year)},
-            )
 
 
-EXTRACTED = ["soil", "land_cover", "ndvi_correction", "climate", "ndvi", "crops"]
+EXTRACTED = ["soil", "land_cover", "ndvi_correction", "climate", "ndvi"]
 
 
 def clear(store: Store, only: list[str] | None = None) -> list[Path]:
@@ -161,27 +150,23 @@ def predict(store: Store, model_path: Path) -> None:
 
 
 def crop_effects(store: Store) -> dict:
-    """Crop type and Crop effect per year, and the model error next to farm land per region.
+    """Crop effect per year, and the model error next to farm land per region.
 
-    The error is given for unseen places, unseen years and both (HOLDOUTS).
+    Farm land is every cell whose main NLCD land cover class is farm (ADR 0006). The error is
+    given for unseen places, unseen years and both (HOLDOUTS).
     """
     natural = natural_cells(store)
-    for year in store.years("crops"):
-        shares = store.load(f"crops/{year}")["shares"]
-        groups = dominant_group(shares)
+    farm = store.load("land_cover")["cover_class"] == COVER_CLASSES.index("farm")
+    for year in store.years("predict"):
         observed = store.load(f"ndvi/{year}")["ndvi"]
         predicted = store.load(f"predict/{year}")["predicted"]
-        effect = crop_effect(observed, predicted, groups)
-        farm = shares.sum(axis=0) >= FARM_SHARE
-        store.save(f"crop_effect/{year}", groups=groups, effect=effect, farm=farm)
+        store.save(f"crop_effect/{year}", effect=crop_effect(observed, predicted, farm))
 
     # Held-out predictions keep this honest: each cell was predicted by a model that never
     # saw its spatial block, its year, or both (ADR 0006).
     held_out = store.load("train/held_out")
     blocks = store.load("train/blocks")["blocks"]
-    near = np.zeros(natural.shape, bool)
-    for year in store.years("crop_effect"):
-        near |= near_farm(store.load(f"crop_effect/{year}")["farm"], natural)
+    near = near_farm(farm, natural)
     rows, cols = held_out["row"], held_out["col"]
     errors = {}
     for holdout in HOLDOUTS:
@@ -224,10 +209,6 @@ def _layer_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]
         by_holdout = {h: {int(b): e for b, e in by_block.items()} for h, by_block in errors.items()}
         blocks = store.load("train/blocks")["blocks"]
         yield layer_id, regional_map(worst_error(by_holdout), blocks)
-    elif layer_id == "crop_type":
-        for year in store.years("crop_effect"):
-            groups = store.load(f"crop_effect/{year}")["groups"].astype(float)
-            yield str(year), np.where(groups >= 0, groups, np.nan)
     else:
         raise ValueError(f"no pipeline output for layer {layer_id!r}")
 

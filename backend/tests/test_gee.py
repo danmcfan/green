@@ -6,13 +6,12 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from green.crops import CROP_GROUPS
 from green.gee import CHUNK, FINE_CHUNK, MAX_FINE_CHUNK, NDVI_CHUNK, EarthEngineSource
 from green.grid import REGIONS
 from green.sources import SOIL_LAYERS
 
 NDVI_FIELDS = [f"{kind}_{m}" for m in range(1, 13) for kind in ("ndvi", "good")]
-FIELDS = ["natural", "cover", *CROP_GROUPS, *SOIL_LAYERS, *NDVI_FIELDS]
+FIELDS = ["natural", "cover", *SOIL_LAYERS, *NDVI_FIELDS]
 
 
 @pytest.fixture
@@ -36,17 +35,15 @@ def source():
     return src
 
 
-@pytest.mark.parametrize("fetch", ["land_cover", "crop_shares"])
-def test_30m_inputs_are_fetched_in_chunks_earth_engine_accepts(source, fetch):
+def test_30m_land_cover_is_fetched_in_chunks_earth_engine_accepts(source):
     grid = REGIONS["ohio_valley"]
-    result = source.land_cover(grid) if fetch == "land_cover" else source.crop_shares(grid, 2012)
+    share, _ = source.land_cover(grid)
     largest = max(max(size) for size in source.sizes)
     assert largest <= MAX_FINE_CHUNK
     assert largest == FINE_CHUNK
     assert sum(w * h for w, h in source.sizes) == grid.width * grid.height
     # Every chunk lands in the output: no cell is left masked.
-    values = result[0] if fetch == "land_cover" else result
-    assert not np.isnan(values).any()
+    assert not np.isnan(share).any()
 
 
 def test_coarse_inputs_keep_larger_chunks(source):
