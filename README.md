@@ -58,6 +58,13 @@ task pipeline -- run --region small --start 2010 --end 2013   # extract → trai
 task pipeline -- publish --region small --tag tiles-2026-10   # upload the PMTiles to a GitHub Release and deploy it
 ```
 
+Extract saves each download under `data/<region>/` and reuses it on the next run, so a run that fails part way starts again where it stopped. To fetch data again, delete it:
+
+```sh
+task pipeline:clear REGION=conus                                 # every saved download
+task pipeline:clear REGION=conus -- --only land_cover ndvi/2012  # some files or folders
+```
+
 `tiles` and `publish` fail if the PMTiles would not fit within the GitHub Release or Pages limits (file count, largest file, total size), which are set in `backend/src/green/limits.py`. Each step can also run on its own (`extract`, `train`, `predict`, `crops`, `tiles`). Use `--region conus` for the whole country. Output goes to `data/`, `models/` and `tiles/`, all ignored by git. Any range of years works: the VIIRS correction is fitted once per region on every year from 2012–2026, whatever years a run covers, and saved in `data/<region>/ndvi_correction.npz` for later runs. It is fitted again if the saved one came from another source (`--source`).
 
 ## Deployment
