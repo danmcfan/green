@@ -15,6 +15,7 @@ import numpy as np
 from green.crops import CDL_GROUPS, CROP_GROUPS
 from green.grid import Grid
 from green.layers import LAYERS_FILE
+from green.progress import Progress
 from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,9 @@ class EarthEngineSource:
         self.ee = ee
         self.workers = workers
 
-    def _fetch(self, image, grid: Grid, bands: list[str], chunk_size: int = CHUNK) -> np.ndarray:
+    def _fetch(
+        self, label: str, image, grid: Grid, bands: list[str], chunk_size: int = CHUNK
+    ) -> np.ndarray:
         """Pixels for every band, as (band, height, width) floats with NaN where masked."""
         out = np.full((len(bands), *grid.shape), np.nan, dtype=np.float32)
 
@@ -108,9 +111,11 @@ class EarthEngineSource:
             for i, band in enumerate(bands):
                 values = np.ma.filled(np.ma.asarray(data[band]).astype(np.float32), np.nan)
                 out[i, row : row + sub.height, col : col + sub.width] = values
+            progress.advance()
 
         chunks = grid.chunks(chunk_size)
-        logger.info("Fetching %d bands over %d chunks", len(bands), len(chunks))
+        logger.info("Fetching %s: %d bands over %d chunks", label, len(bands), len(chunks))
+        progress = Progress(label, len(chunks))
         with ThreadPoolExecutor(self.workers) as pool:
             list(pool.map(one, chunks))
         return out
@@ -125,7 +130,7 @@ class EarthEngineSource:
             image = ee.Image(asset).select(["b0", "b30"]).multiply(scale)
             bands.append(image.rename([f"soil_{name}_0cm", f"soil_{name}_30cm"]))
         image = self._coarsen(ee.Image.cat(bands))
-        values = self._fetch(image, grid, list(SOIL_LAYERS))
+        values = self._fetch("soil", image, grid, list(SOIL_LAYERS))
         return dict(zip(SOIL_LAYERS, values, strict=True))
 
     def climate(self, grid: Grid, year: int) -> dict[str, np.ndarray]:
@@ -144,7 +149,7 @@ class EarthEngineSource:
                 rest.addBands(prcp).select(list(DAYMET_BANDS), names).setDefaultProjection(native)
             )
         names = [f"{layer}_{m}" for m in range(1, 13) for layer in CLIMATE_LAYERS]
-        values = self._fetch(self._coarsen(ee.Image.cat(months)), grid, names)
+        values = self._fetch(f"climate {year}", self._coarsen(ee.Image.cat(months)), grid, names)
         values = values.reshape(12, len(CLIMATE_LAYERS), *grid.shape)
         return {layer: values[:, i] for i, layer in enumerate(CLIMATE_LAYERS)}
 
@@ -187,7 +192,9 @@ class EarthEngineSource:
             enough = share.gte(MIN_VALID_SHARE)
             bands.append(coarse.updateMask(enough).rename([f"ndvi_{month}", f"good_{month}"]))
         names = [f"{kind}_{m}" for m in range(1, 13) for kind in ("ndvi", "good")]
-        values = self._fetch(ee.Image.cat(bands), grid, names, NDVI_CHUNK)
+        values = self._fetch(
+            f"{satellite} NDVI {year}", ee.Image.cat(bands), grid, names, NDVI_CHUNK
+        )
         values = values.reshape(12, 2, *grid.shape)
         return values[:, 0], values[:, 1]
 
@@ -210,7 +217,9 @@ class EarthEngineSource:
             ee.Reducer.mode(), maxPixels=MAX_PIXELS
         )
         image = self._coarsen(natural).rename("natural").addBands(cover.rename("cover"))
-        share, cover_class = self._fetch(image, grid, ["natural", "cover"], FINE_CHUNK)
+        share, cover_class = self._fetch(
+            "land cover", image, grid, ["natural", "cover"], FINE_CHUNK
+        )
         return share, np.nan_to_num(cover_class, nan=other).astype(np.int8)
 
     def crop_shares(self, grid: Grid, year: int) -> np.ndarray:
@@ -222,4 +231,4 @@ class EarthEngineSource:
             for g in CROP_GROUPS
         ]
         image = self._coarsen(ee.Image.cat(bands))
-        return self._fetch(image, grid, list(CROP_GROUPS), FINE_CHUNK)
+        return self._fetch(f"crop shares {year}", image, grid, list(CROP_GROUPS), FINE_CHUNK)
