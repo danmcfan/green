@@ -23,6 +23,7 @@ from green.crops import (
 from green.layers import LayerDefinition, load_layers
 from green.limits import check_tiles
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
+from green.progress import Progress, step
 from green.sources import CLIMATE_LAYERS, SOIL_LAYERS, Source
 from green.store import Store
 from green.tiles import MAX_ZOOM, write_pmtiles
@@ -79,8 +80,8 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
     if any(y >= FIRST_VIIRS_YEAR for y in years):
         coeffs = ndvi_correction(source, store, cover_class)
 
-    for year in years:
-        logger.info("Extracting %d", year)
+    for i, year in enumerate(years, start=1):
+        logger.info("Extracting %d (year %d of %d)", year, i, len(years))
         store.save(f"climate/{year}", **source.climate(grid, year))
         if year < FIRST_VIIRS_YEAR:
             ndvi, good = source.ndvi(grid, year, "modis")
@@ -97,7 +98,9 @@ def predict(store: Store, model_path: Path) -> None:
     model = joblib.load(model_path)
     soil = store.load("soil")
     natural = natural_cells(store)
-    for year in store.years("climate"):
+    years = store.years("climate")
+    progress = Progress("Predicting years", len(years), interval=0)
+    for year in years:
         x = input_stack(soil, store.load(f"climate/{year}"))
         valid = ~np.isnan(x).any(axis=-1)
         predicted = np.full(valid.shape, np.nan)
@@ -105,6 +108,7 @@ def predict(store: Store, model_path: Path) -> None:
         observed = store.load(f"ndvi/{year}")["ndvi"]
         residual = np.where(natural, observed - predicted, np.nan)
         store.save(f"predict/{year}", predicted=predicted, residual=residual)
+        progress.advance()
 
 
 def crop_effects(store: Store) -> dict:
@@ -192,12 +196,13 @@ def tiles(
     """
     grid = store.grid()
     written = []
-    for layer in (layers or load_layers()).values():
+    layers = list((layers or load_layers()).values())
+    for i, layer in enumerate(layers, start=1):
         for name, values in _layer_maps(store, layer.id):
             path = out_dir / layer.id / f"{name}.pmtiles"
             write_pmtiles(path, values, grid, layer, max_zoom=max_zoom)
             written.append(path)
-        logger.info("Wrote tiles for %s", layer.id)
+        logger.info("Wrote tiles for %s (layer %d of %d)", layer.id, i, len(layers))
     logger.info("Wrote %s", check_tiles(written))
     return written
 
@@ -246,9 +251,15 @@ def run(
 ) -> list[Path]:
     """The whole pipeline, from extract to PMTiles; data_dir must already hold grid.json."""
     store = Store(data_dir)
-    extract(source, store, years)
-    report = train(store, model_path, block_km=block_km)
-    logger.info("Model scores: %s", json.dumps(report, indent=2))
-    predict(store, model_path)
-    crop_effects(store)
-    return tiles(store, tiles_dir, layers, max_zoom)
+    with step(f"Run {years[0]}–{years[-1]}"):
+        with step("Extract"):
+            extract(source, store, years)
+        with step("Train"):
+            report = train(store, model_path, block_km=block_km)
+        logger.info("Model scores: %s", json.dumps(report, indent=2))
+        with step("Predict"):
+            predict(store, model_path)
+        with step("Crop effect"):
+            crop_effects(store)
+        with step("Tiles"):
+            return tiles(store, tiles_dir, layers, max_zoom)

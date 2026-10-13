@@ -170,6 +170,7 @@ def evaluate(
     is_test_year = np.isin(rows.year, test_years)
     report: dict = {"test_years": test_years, "folds": int(folds.max()) + 1}
 
+    logger.info("Fitting unseen-years holdout (test years %s)", test_years)
     temporal = _predict_all(rows.take(~is_test_year), rows.take(is_test_year), seed, True)
     test = rows.take(is_test_year)
     report["temporal"] = _summarise([{m: metrics(test.y, p) for m, p in temporal.items()}])
@@ -183,6 +184,7 @@ def evaluate(
 
     spatial, combined = [], []
     for k in range(report["folds"]):
+        logger.info("Fitting spatial fold %d of %d", k + 1, report["folds"])
         held = past.take(past_folds == k)
         predictions = _predict_all(past.take(past_folds != k), held, seed, False)
         held_out.append((held, predictions["gbm"], "spatial"))
@@ -240,6 +242,7 @@ def train(
     store.save("train/blocks", blocks=blocks, folds=cell_folds)
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("Fitting final model on all %d rows", len(rows.y))
     joblib.dump(
         {
             # The pipeline holds the fitted scaler and model together.
