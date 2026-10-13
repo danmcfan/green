@@ -7,6 +7,7 @@ parallel. Asset IDs, band names and NDVI scales were checked against Earth Engin
 import calendar
 import io
 import logging
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -32,6 +33,8 @@ NDVI_CHUNK = 64
 # failed and 49 worked (checked 2026-10-12, issue #20).
 MAX_FINE_CHUNK = 49
 FINE_CHUNK = 48
+# The Earth Engine error for a chunk that covers too many fine pixels.
+TOO_LARGE = "Reprojection output too large"
 # Earth Engine's limit on fine pixels per coarse pixel in reduceResolution.
 MAX_PIXELS = 65535
 # A 4 km cell needs at least half of its fine pixels valid (docs/research §3).
@@ -102,15 +105,28 @@ class EarthEngineSource:
         """Pixels for every band, as (band, height, width) floats with NaN where masked."""
         out = np.full((len(bands), *grid.shape), np.nan, dtype=np.float32)
 
-        def one(chunk: tuple[int, int, Grid]) -> None:
-            row, col, sub = chunk
-            raw = self.ee.data.computePixels(
-                {"expression": image.select(bands), "fileFormat": "NPY", "grid": sub.ee_grid()}
-            )
+        def fill(row: int, col: int, sub: Grid) -> None:
+            try:
+                raw = self.ee.data.computePixels(
+                    {"expression": image.select(bands), "fileFormat": "NPY", "grid": sub.ee_grid()}
+                )
+            except self.ee.EEException as e:
+                # Near the edges of CONUS a chunk is turned in the 30 m Albers projection, so
+                # it covers more fine pixels; split it in four and try again (issue #15).
+                size = max(sub.width, sub.height)
+                if TOO_LARGE not in str(e) or size == 1:
+                    raise
+                logger.warning("%s: chunk %d × %d too large, splitting", label, *sub.shape)
+                for r, c, part in sub.chunks(math.ceil(size / 2)):
+                    fill(row + r, col + c, part)
+                return
             data = np.load(io.BytesIO(raw))
             for i, band in enumerate(bands):
                 values = np.ma.filled(np.ma.asarray(data[band]).astype(np.float32), np.nan)
                 out[i, row : row + sub.height, col : col + sub.width] = values
+
+        def one(chunk: tuple[int, int, Grid]) -> None:
+            fill(*chunk)
             progress.advance()
 
         chunks = grid.chunks(chunk_size)
