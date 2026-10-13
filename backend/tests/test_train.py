@@ -59,3 +59,18 @@ def test_one_spatial_block_still_gives_unseen_years():
     rows = _rows([2010, 2011, 2012, 2013], cells=4)
     _, _, _, holdout = evaluate(rows, np.zeros(len(rows.y), int), [2013], seed=0)
     assert set(holdout) == {"temporal"}
+
+
+def test_unseen_years_score_climatology_plus_gbm_on_departures():
+    # Each cell has its own level; Input layers only explain how a year departs from it.
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    level = np.random.default_rng(1).normal(size=16)[rows.row * 4 + rows.col] * 5
+    rows.y = rows.y + level
+    report, *_ = evaluate(rows, (rows.row >= 2).astype(int), [2013], seed=0)
+
+    temporal = report["temporal"]
+    assert temporal["climatology_gbm"]["rmse"]["mean"] < temporal["climatology"]["rmse"]["mean"]
+    departure = report["temporal_departure_r2"]
+    assert abs(departure["climatology"]) < 1e-9
+    assert departure["climatology_gbm"] > 0.5
+    assert "climatology_gbm" not in report["spatial"]

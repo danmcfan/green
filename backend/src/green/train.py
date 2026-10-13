@@ -98,13 +98,17 @@ def held_out_years(years: list[int], n: int = HELD_OUT_YEARS) -> list[int]:
     return sorted(years)[-n:]
 
 
+def _r2(error: np.ndarray, total: float) -> float:
+    return float(1 - (error**2).sum() / total) if total else float("nan")
+
+
 def metrics(observed: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
     error = predicted - observed
     total = ((observed - observed.mean()) ** 2).sum()
     return {
         "rmse": float(np.sqrt((error**2).mean())),
         "mae": float(np.abs(error).mean()),
-        "r2": float(1 - (error**2).sum() / total) if total else float("nan"),
+        "r2": _r2(error, total),
     }
 
 
@@ -128,21 +132,38 @@ def _predict_all(train: Rows, test: Rows, seed: int, climatology: bool) -> dict[
         "gbm": _fit(gbm(seed), train).predict(test.x),
     }
     if climatology:
-        # Per-cell, per-month mean from training years; only fair for unseen years.
-        dims = (
-            max(train.row.max(), test.row.max()) + 1,
-            max(train.col.max(), test.col.max()) + 1,
-            12,
+        # Only fair for unseen years: unseen places have no history.
+        test_climatology = _climatology(train, test, fallback=predictions["mean"])
+        predictions["climatology"] = test_climatology
+        # Do the Input layers explain the Departure? Every training row has a climatology.
+        departure_rows = Rows(
+            **{**vars(train), "y": train.y - _climatology(train, train, fallback=0.0)}
         )
-        train_key = np.ravel_multi_index((train.row, train.col, train.month), dims)
-        test_key = np.ravel_multi_index((test.row, test.col, test.month), dims)
-        order = np.argsort(train_key)
-        unique, start = np.unique(train_key[order], return_index=True)
-        means = np.add.reduceat(train.y[order], start) / np.diff(np.append(start, len(order)))
-        index = np.clip(np.searchsorted(unique, test_key), 0, len(unique) - 1)
-        known = unique[index] == test_key
-        predictions["climatology"] = np.where(known, means[index], predictions["mean"])
+        predictions["climatology_gbm"] = test_climatology + _fit(gbm(seed), departure_rows).predict(
+            test.x
+        )
     return predictions
+
+
+def _climatology(train: Rows, test: Rows, fallback: np.ndarray | float) -> np.ndarray:
+    """Mean `train` NDVI for each `test` row's cell and month, or `fallback` where it has none."""
+    dims = (
+        max(train.row.max(), test.row.max()) + 1,
+        max(train.col.max(), test.col.max()) + 1,
+        12,
+    )
+    train_key = np.ravel_multi_index((train.row, train.col, train.month), dims)
+    test_key = np.ravel_multi_index((test.row, test.col, test.month), dims)
+    order = np.argsort(train_key)
+    unique, start = np.unique(train_key[order], return_index=True)
+    means = np.add.reduceat(train.y[order], start) / np.diff(np.append(start, len(order)))
+    index = np.clip(np.searchsorted(unique, test_key), 0, len(unique) - 1)
+    return np.where(unique[index] == test_key, means[index], fallback)
+
+
+def _departure_r2(observed: np.ndarray, predicted: np.ndarray, usual: np.ndarray) -> float:
+    """R² of the Departure from `usual`; 0 for predicting no Departure, 1 for a perfect one."""
+    return _r2(predicted - observed, ((observed - usual) ** 2).sum())
 
 
 def _summarise(per_fold: list[dict[str, dict[str, float]]]) -> dict:
@@ -174,6 +195,9 @@ def evaluate(
     temporal = _predict_all(rows.take(~is_test_year), rows.take(is_test_year), seed, True)
     test = rows.take(is_test_year)
     report["temporal"] = _summarise([{m: metrics(test.y, p) for m, p in temporal.items()}])
+    report["temporal_departure_r2"] = {
+        m: _departure_r2(test.y, p, temporal["climatology"]) for m, p in temporal.items()
+    }
     held_out = [(test, temporal["gbm"], "temporal")]
 
     past = rows.take(~is_test_year)

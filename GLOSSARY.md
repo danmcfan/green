@@ -28,6 +28,10 @@ _Avoid_: Crop gap, NDVI difference, anomaly
 Observed NDVI minus Predicted NDVI on natural land, for a place and month; where the model is wrong.
 _Avoid_: Error map, anomaly
 
+**Departure**:
+Observed NDVI minus the mean Observed NDVI for the same place and month in the training years; how unusual a year is. Only a place with a history has one.
+_Avoid_: Anomaly
+
 **Error next to farm land**:
 How wrong Predicted NDVI is on natural land next to farm land, as the RMSE over every month in each spatial block. It is measured on unseen places, unseen years and both, and the map shows the largest of the three. A Crop effect smaller than this cannot be told apart from model error.
 
