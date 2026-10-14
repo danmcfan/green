@@ -128,3 +128,40 @@
     @apply font-sans;
     }
 }
+/* Frosted "liquid glass" for panels floating over the map. */
+@utility glass {
+  @apply border border-white/40 bg-background/55 shadow-2xl ring-1 ring-black/5 backdrop-blur-2xl backdrop-saturate-200;
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.5),
+    inset 0 -1px 0 0 rgb(255 255 255 / 0.1),
+    0 24px 48px -12px rgb(0 0 0 / 0.25);
+
+  &:where(.dark *) {
+    @apply border-white/10 bg-background/45 ring-white/5;
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.12),
+      0 24px 48px -12px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* MapLibre's own controls, matched to the theme; scoped under the map to outrank its stylesheet. */
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-group {
+  @apply glass overflow-hidden rounded-xl;
+}
+.maplibregl-map .maplibregl-ctrl-group button {
+  @apply bg-transparent hover:bg-accent;
+}
+.maplibregl-map .maplibregl-ctrl-group button + button {
+  @apply border-border;
+}
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact-show,
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  @apply glass rounded-xl text-muted-foreground;
+}
+.maplibregl-map .maplibregl-ctrl-attrib a {
+  @apply text-muted-foreground;
+}
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon,
+.dark .maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+}
