@@ -3,6 +3,7 @@ import * as maplibregl from "maplibre-gl"
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url"
 import { PMTiles, Protocol } from "pmtiles"
 import { useEffect, useRef, useState } from "react"
+import { useTheme } from "@/components/theme-provider"
 import { Skeleton } from "@/components/ui/skeleton"
 
 // MapLibre finds its worker next to its own module, which Vite moves; point it at the file.
@@ -12,12 +13,28 @@ maplibregl.addProtocol("pmtiles", protocol.tile)
 
 const CONUS_BOUNDS: [number, number, number, number] = [-125, 24, -66.5, 49.5]
 const SOURCE = "layer"
+const BASEMAPS = {
+  light: "https://tiles.openfreemap.org/styles/positron",
+  dark: "https://tiles.openfreemap.org/styles/dark",
+}
 
 /** The basemap with one raster PMTiles map drawn under its labels; `url` is a pmtiles:// URL. */
 export default function MapView({ url }: { url: string | null }) {
   const container = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<maplibregl.Map | null>(null)
   const fitted = useRef(false)
+  const { resolved } = useTheme()
+  const basemap = BASEMAPS[resolved]
+  const shown = useRef(basemap)
+  // Bumped each time a new basemap finishes loading, which drops the raster layer.
+  const [styles, setStyles] = useState(0)
+
+  useEffect(() => {
+    if (!map || shown.current === basemap) return
+    shown.current = basemap
+    map.once("style.load", () => setStyles((n) => n + 1))
+    map.setStyle(basemap)
+  }, [map, basemap])
 
   // Declared before the effect that creates the map, so its cleanup runs before map.remove().
   useEffect(() => {
@@ -51,22 +68,28 @@ export default function MapView({ url }: { url: string | null }) {
     }
     return () => {
       live = false
-      map.removeLayer(SOURCE)
-      map.removeSource(SOURCE)
+      // A basemap change has already removed them.
+      if (map.getLayer(SOURCE)) map.removeLayer(SOURCE)
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE)
     }
-  }, [map, url])
+  }, [map, url, styles])
 
   useEffect(() => {
     const element = container.current
     if (!element) return
     const map = new maplibregl.Map({
       container: element,
-      style: "https://tiles.openfreemap.org/styles/positron",
+      style: shown.current,
       bounds: CONUS_BOUNDS,
+      attributionControl: false,
     })
-    map.addControl(new maplibregl.NavigationControl(), "bottom-right")
-    map.addControl(new maplibregl.FullscreenControl(), "bottom-right")
-    map.addControl(new maplibregl.GeolocateControl({}), "bottom-right")
+    // Bottom left, clear of the floating panel on the right.
+    map.addControl(new maplibregl.NavigationControl(), "bottom-left")
+    map.addControl(new maplibregl.GeolocateControl({}), "bottom-left")
+    map.addControl(
+      new maplibregl.AttributionControl({ compact: true }),
+      "bottom-left"
+    )
     map.on("load", () => setMap(map))
     return () => {
       setMap(null)
@@ -75,9 +98,9 @@ export default function MapView({ url }: { url: string | null }) {
   }, [])
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg">
+    <div className="relative h-full w-full">
       <div ref={container} className="h-full w-full" />
-      {!map && <Skeleton className="absolute inset-0 rounded-lg" />}
+      {!map && <Skeleton className="absolute inset-0 rounded-none" />}
     </div>
   )
 }

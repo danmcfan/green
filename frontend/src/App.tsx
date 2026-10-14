@@ -1,9 +1,10 @@
-import { PanelLeft } from "lucide-react"
+import { PanelRight } from "lucide-react"
 import { useEffect, useState } from "react"
 import { z } from "zod"
 import Controls from "@/components/controls"
 import Legend from "@/components/legend"
 import MapView from "@/components/map"
+import ModeToggle from "@/components/mode-toggle"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -78,11 +79,15 @@ export default function App() {
   )
 
   return (
-    <div className="flex h-dvh w-full flex-col gap-3 p-3 lg:grid lg:grid-cols-4 lg:gap-4 lg:p-4">
-      <header className="flex items-center gap-3 lg:hidden">
+    <div className="relative h-dvh w-full overflow-hidden">
+      <main className="absolute inset-0">
+        <MapView url={url} />
+      </main>
+
+      <header className="absolute inset-x-3 top-3 flex items-center gap-3 rounded-2xl glass p-3 lg:hidden">
         <Sheet>
-          <SheetTrigger render={<Button size="icon" variant="outline" />}>
-            <PanelLeft />
+          <SheetTrigger render={<Button size="icon" variant="ghost" />}>
+            <PanelRight />
             <span className="sr-only">Layers</span>
           </SheetTrigger>
           <SheetContent side="top">
@@ -100,14 +105,14 @@ export default function App() {
           {title}
           <Legend layer={layer} />
         </div>
+        <ModeToggle />
       </header>
 
-      <main className="min-h-0 flex-1 lg:col-span-3">
-        <MapView url={url} />
-      </main>
-
-      <aside className="hidden flex-col gap-4 overflow-y-auto p-2 lg:flex">
-        {heading}
+      <aside className="absolute top-4 right-4 bottom-4 hidden w-96 flex-col gap-4 overflow-y-auto rounded-3xl glass p-5 lg:flex">
+        <div className="flex items-start gap-2">
+          <div className="flex-1">{heading}</div>
+          <ModeToggle />
+        </div>
         <Separator />
         {title}
         <Legend layer={layer} />
