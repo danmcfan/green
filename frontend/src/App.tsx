@@ -1,10 +1,11 @@
-import { PanelLeft } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import Controls from '@/components/controls'
-import Legend from '@/components/legend'
-import MapView from '@/components/map'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
+import { PanelLeft } from "lucide-react"
+import { useEffect, useState } from "react"
+import { z } from "zod"
+import Controls from "@/components/controls"
+import Legend from "@/components/legend"
+import MapView from "@/components/map"
+import { Button } from "@/components/ui/button"
+import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
   SheetContent,
@@ -12,9 +13,15 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet'
-import { type Catalog, pickMap, readCatalog, tileUrl, type When } from '@/lib/catalog'
-import { layers } from '@/lib/layers'
+} from "@/components/ui/sheet"
+import {
+  type Catalog,
+  pickMap,
+  readCatalog,
+  tileUrl,
+  type When,
+} from "@/lib/catalog"
+import { layerOf } from "@/lib/layers"
 
 const SITE = new URL(import.meta.env.BASE_URL, window.location.href).href
 // July: most of the country is near its greenest.
@@ -22,28 +29,27 @@ const DEFAULT_MONTH = 7
 
 export default function App() {
   const [catalog, setCatalog] = useState<Catalog | null>(null)
-  const [layerId, setLayerId] = useState('observed_ndvi')
+  const [layerId, setLayerId] = useState("observed_ndvi")
   const [chosen, setChosen] = useState<When | null>(null)
 
   useEffect(() => {
-    fetch(`${SITE}tiles/index.json`)
-      .then((response) => (response.ok ? response.json() : []))
-      .catch(() => [])
-      .then((files: string[]) => setCatalog(readCatalog(files)))
+    void loadCatalog().then(setCatalog)
   }, [])
 
-  const layer = layers.find((l) => l.id === layerId)!
+  const layer = layerOf(layerId)
   const when = chosen ?? latest(catalog)
   const maps = catalog?.get(layerId)
   const picked = maps && when ? pickMap(maps, when) : null
   const url = picked ? tileUrl(SITE, layerId, picked.name) : null
-  const setWhen = (change: Partial<When>) => when && setChosen({ ...when, ...change })
+  const setWhen = (change: Partial<When>) =>
+    when && setChosen({ ...when, ...change })
 
   const heading = (
     <div>
       <h1 className="font-heading text-lg font-semibold">Green</h1>
       <p className="text-sm text-muted-foreground">
-        How green the land is, and how green soil and climate predict it should be.
+        How green the land is, and how green soil and climate predict it should
+        be.
       </p>
     </div>
   )
@@ -66,7 +72,8 @@ export default function App() {
   )
   const empty = catalog?.size === 0 && (
     <p className="text-sm text-muted-foreground">
-      No maps found. Run the pipeline and <code>task tiles:local</code>, or publish a Release.
+      No maps found. Run the pipeline and <code>task tiles:local</code>, or
+      publish a Release.
     </p>
   )
 
@@ -78,13 +85,15 @@ export default function App() {
             <PanelLeft />
             <span className="sr-only">Layers</span>
           </SheetTrigger>
-          <SheetContent side="top" className="p-4 pb-8">
-            <SheetHeader className="p-0">
-              <SheetTitle>Green</SheetTitle>
-              <SheetDescription>Choose a layer and a time.</SheetDescription>
-            </SheetHeader>
-            {empty}
-            {controls}
+          <SheetContent side="top">
+            <div className="flex flex-col gap-4 p-4 pb-8">
+              <SheetHeader className="p-0">
+                <SheetTitle>Green</SheetTitle>
+                <SheetDescription>Choose a layer and a time.</SheetDescription>
+              </SheetHeader>
+              {empty}
+              {controls}
+            </div>
           </SheetContent>
         </Sheet>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -110,8 +119,21 @@ export default function App() {
   )
 }
 
+/** The published maps, or an empty catalog if the index is missing or unreadable. */
+async function loadCatalog(): Promise<Catalog> {
+  try {
+    const response = await fetch(`${SITE}tiles/index.json`)
+    const files: unknown = response.ok ? await response.json() : []
+    return readCatalog(z.array(z.string()).catch([]).parse(files))
+  } catch {
+    return readCatalog([])
+  }
+}
+
 /** The latest year with any map, in DEFAULT_MONTH; null until the catalog is loaded or if empty. */
 function latest(catalog: Catalog | null): When | null {
   const years = [...(catalog?.values() ?? [])].flatMap((maps) => maps.years)
-  return years.length ? { year: Math.max(...years), month: DEFAULT_MONTH } : null
+  return years.length
+    ? { year: Math.max(...years), month: DEFAULT_MONTH }
+    : null
 }

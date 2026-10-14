@@ -36,12 +36,25 @@ tasks:
 
   lint:frontend:
     dir: frontend
-    cmd: bun run lint
+    cmds:
+      - bun run format:check
+      - bun run lint
+      - bun run typecheck
+      - bun run knip
 
   format:
-    desc: Format backend code
+    desc: Format backend and frontend code
+    cmds:
+      - task: format:backend
+      - task: format:frontend
+
+  format:backend:
     dir: backend
     cmd: uv run ruff format
+
+  format:frontend:
+    dir: frontend
+    cmd: bun run format
 
   test:
     desc: Run backend and frontend tests

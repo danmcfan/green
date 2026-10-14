@@ -1,16 +1,22 @@
-import { CloudRain, Leaf, Shovel, Wheat } from 'lucide-react'
-import { Label } from '@/components/ui/label'
+import { CloudRain, Leaf, Shovel, Wheat } from "lucide-react"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import type { Catalog, Picked, When } from '@/lib/catalog'
-import { GROUPS, type GroupId, groupOf, type LayerDefinition, layers } from '@/lib/layers'
+} from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { Catalog, Picked, When } from "@/lib/catalog"
+import {
+  GROUPS,
+  type GroupId,
+  groupOf,
+  type LayerDefinition,
+  layers,
+} from "@/lib/layers"
 
 const ICONS: Record<GroupId, typeof Leaf> = {
   soil: Shovel,
@@ -20,7 +26,7 @@ const ICONS: Record<GroupId, typeof Leaf> = {
 }
 
 const MONTHS = Array.from({ length: 12 }, (_, i) =>
-  new Date(2000, i).toLocaleString('en-US', { month: 'long' }),
+  new Date(2000, i).toLocaleString("en-US", { month: "long" })
 )
 
 export default function Controls({
@@ -49,7 +55,8 @@ export default function Controls({
         value={group}
         onValueChange={(value) => {
           const choices = layers.filter((l) => groupOf(l) === value)
-          setLayer((choices.find((l) => catalog.has(l.id)) ?? choices[0]).id)
+          const choice = choices.find((l) => catalog.has(l.id)) ?? choices[0]
+          if (choice) setLayer(choice.id)
         }}
       >
         <TabsList className="grid w-full grid-cols-4">
@@ -58,7 +65,9 @@ export default function Controls({
             return (
               <TabsTrigger key={id} value={id} aria-label={label} title={label}>
                 <Icon />
-                <span className="sr-only sm:not-sr-only lg:sr-only xl:not-sr-only">{label}</span>
+                <span className="sr-only sm:not-sr-only lg:sr-only xl:not-sr-only">
+                  {label}
+                </span>
               </TabsTrigger>
             )
           })}
@@ -69,7 +78,9 @@ export default function Controls({
         <Label>Layer</Label>
         <Select
           value={layer.id}
-          onValueChange={(value) => value && setLayer(value)}
+          onValueChange={(value) => {
+            if (value !== null) setLayer(value)
+          }}
           items={inGroup.map((l) => ({ value: l.id, label: l.name }))}
         >
           <SelectTrigger className="w-full" aria-label="Layer">
@@ -98,7 +109,12 @@ export default function Controls({
               max={years.at(-1)}
               value={[year]}
               // Keep the month on screen, so both sliders move from what the map shows.
-              onValueChange={(value) => setWhen({ year: first(value), ...(month && { month }) })}
+              onValueChange={(value) =>
+                setWhen({
+                  year: first(value, year),
+                  ...(month !== undefined && { month }),
+                })
+              }
             />
           )}
         </div>
@@ -115,42 +131,61 @@ export default function Controls({
             min={1}
             max={12}
             value={[month]}
-            onValueChange={(value) => setWhen({ year, month: first(value) })}
+            onValueChange={(value) =>
+              setWhen({ year, month: first(value, month) })
+            }
           />
         </div>
       )}
 
-      {layer.id === 'crop_effect' && (
+      {layer.id === "crop_effect" && (
         <p className="text-sm text-muted-foreground">
-          The Crop effect only means something where it is larger than the model&apos;s error on
-          natural land nearby.{' '}
-          <LayerLink onClick={() => setLayer('crop_effect_error')}>Show that error</LayerLink>
+          The Crop effect only means something where it is larger than the
+          model&apos;s error on natural land nearby.{" "}
+          <LayerLink onClick={() => setLayer("crop_effect_error")}>
+            Show that error
+          </LayerLink>
         </p>
       )}
-      {layer.id === 'crop_effect_error' && (
+      {layer.id === "crop_effect_error" && (
         <p className="text-sm text-muted-foreground">
-          How wrong Predicted NDVI is on natural land next to farm land, in each spatial block over
-          every month: the largest error on places, years, or both that the model did not see. A
-          Crop effect smaller than this cannot be told apart from model error.{' '}
-          <LayerLink onClick={() => setLayer('crop_effect')}>Show the Crop effect</LayerLink>
+          How wrong Predicted NDVI is on natural land next to farm land, in each
+          spatial block over every month: the largest error on places, years, or
+          both that the model did not see. A Crop effect smaller than this
+          cannot be told apart from model error.{" "}
+          <LayerLink onClick={() => setLayer("crop_effect")}>
+            Show the Crop effect
+          </LayerLink>
         </p>
       )}
 
       {!maps && (
-        <p className="text-sm text-muted-foreground">No maps have been published for this layer.</p>
+        <p className="text-sm text-muted-foreground">
+          No maps have been published for this layer.
+        </p>
       )}
     </div>
   )
 }
 
-function LayerLink({ onClick, children }: { onClick: () => void; children: string }) {
+function LayerLink({
+  onClick,
+  children,
+}: {
+  onClick: () => void
+  children: string
+}) {
   return (
-    <button type="button" className="text-foreground underline underline-offset-4" onClick={onClick}>
+    <button
+      type="button"
+      className="text-foreground underline underline-offset-4"
+      onClick={onClick}
+    >
       {children}
     </button>
   )
 }
 
-function first(value: number | readonly number[]): number {
-  return typeof value === 'number' ? value : value[0]
+function first(value: number | readonly number[], current: number): number {
+  return typeof value === "number" ? value : (value[0] ?? current)
 }
