@@ -1,8 +1,10 @@
 import { CloudRain, Leaf, Shovel, Wheat } from "lucide-react"
-import { Label } from "@/components/ui/label"
+import { useId } from "react"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -48,9 +50,10 @@ export default function Controls({
   const years = maps?.years ?? []
   const year = picked?.year
   const month = picked?.month
+  const fieldId = useId()
 
   return (
-    <div className="flex w-full flex-col gap-6">
+    <FieldGroup>
       <Tabs
         value={group}
         onValueChange={(value) => {
@@ -63,19 +66,17 @@ export default function Controls({
           {GROUPS.map(({ id, label }) => {
             const Icon = ICONS[id]
             return (
-              <TabsTrigger key={id} value={id} aria-label={label} title={label}>
-                <Icon />
-                <span className="sr-only sm:not-sr-only lg:sr-only xl:not-sr-only">
-                  {label}
-                </span>
+              <TabsTrigger key={id} value={id}>
+                <Icon data-icon="inline-start" />
+                {label}
               </TabsTrigger>
             )
           })}
         </TabsList>
       </Tabs>
 
-      <div className="flex flex-col gap-2">
-        <Label>Layer</Label>
+      <Field>
+        <FieldLabel htmlFor={`${fieldId}-layer`}>Layer</FieldLabel>
         <Select
           value={layer.id}
           onValueChange={(value) => {
@@ -83,28 +84,35 @@ export default function Controls({
           }}
           items={inGroup.map((l) => ({ value: l.id, label: l.name }))}
         >
-          <SelectTrigger className="w-full" aria-label="Layer">
+          <SelectTrigger id={`${fieldId}-layer`} className="w-full">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            {inGroup.map((l) => (
-              <SelectItem key={l.id} value={l.id} disabled={!catalog.has(l.id)}>
-                {l.name}
-              </SelectItem>
-            ))}
+          {/* Below the trigger, not over the fields under it. */}
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {inGroup.map((l) => (
+                <SelectItem
+                  key={l.id}
+                  value={l.id}
+                  disabled={!catalog.has(l.id)}
+                >
+                  {l.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           </SelectContent>
         </Select>
-      </div>
+      </Field>
 
       {year !== undefined && (
-        <div className="flex flex-col gap-3">
+        <Field>
           <div className="flex justify-between">
-            <Label>Year</Label>
+            <FieldLabel id={`${fieldId}-year`}>Year</FieldLabel>
             <span className="text-sm tabular-nums">{year}</span>
           </div>
           {years.length > 1 && (
             <Slider
-              aria-label="Year"
+              aria-labelledby={`${fieldId}-year`}
               min={years[0]}
               max={years.at(-1)}
               value={[year]}
@@ -117,17 +125,17 @@ export default function Controls({
               }
             />
           )}
-        </div>
+        </Field>
       )}
 
       {year !== undefined && month !== undefined && (
-        <div className="flex flex-col gap-3">
+        <Field>
           <div className="flex justify-between">
-            <Label>Month</Label>
+            <FieldLabel id={`${fieldId}-month`}>Month</FieldLabel>
             <span className="text-sm">{MONTHS[month - 1]}</span>
           </div>
           <Slider
-            aria-label="Month"
+            aria-labelledby={`${fieldId}-month`}
             min={1}
             max={12}
             value={[month]}
@@ -135,7 +143,7 @@ export default function Controls({
               setWhen({ year, month: first(value, month) })
             }
           />
-        </div>
+        </Field>
       )}
 
       {layer.id === "crop_effect" && (
@@ -164,7 +172,7 @@ export default function Controls({
           No maps have been published for this layer.
         </p>
       )}
-    </div>
+    </FieldGroup>
   )
 }
 

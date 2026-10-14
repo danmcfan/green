@@ -128,40 +128,41 @@
     @apply font-sans;
     }
 }
-/* Frosted "liquid glass" for panels floating over the map. */
+/* "Liquid glass" for panels floating over the map: a light tint and a light blur, so the map shows through. */
 @utility glass {
-  @apply border border-white/40 bg-background/55 shadow-2xl ring-1 ring-black/5 backdrop-blur-2xl backdrop-saturate-200;
+  @apply border border-white/50 bg-background/20 backdrop-blur-md backdrop-saturate-150;
   box-shadow:
-    inset 0 1px 0 0 rgb(255 255 255 / 0.5),
-    inset 0 -1px 0 0 rgb(255 255 255 / 0.1),
-    0 24px 48px -12px rgb(0 0 0 / 0.25);
+    inset 0 1px 0 0 rgb(255 255 255 / 0.7),
+    inset 0 0 0 1px rgb(255 255 255 / 0.15),
+    0 0 0 1px rgb(0 0 0 / 0.05),
+    0 12px 32px -8px rgb(0 0 0 / 0.25);
+  /* Controls on the glass fill with a tint of the text color, not solid grey; quiet text stays readable over bright layers. */
+  --muted-foreground: color-mix(in oklab, var(--foreground) 72%, transparent);
+  --muted: color-mix(in oklab, var(--foreground) 7%, transparent);
+  --input: color-mix(in oklab, var(--foreground) 15%, transparent);
+  --border: color-mix(in oklab, var(--foreground) 12%, transparent);
 
+  /* More tint in the dark, where light text on dark glass loses contrast faster. */
   &:where(.dark *) {
-    @apply border-white/10 bg-background/45 ring-white/5;
+    @apply border-white/15 bg-background/35;
     box-shadow:
-      inset 0 1px 0 0 rgb(255 255 255 / 0.12),
-      0 24px 48px -12px rgb(0 0 0 / 0.6);
+      inset 0 1px 0 0 rgb(255 255 255 / 0.15),
+      0 0 0 1px rgb(0 0 0 / 0.3),
+      0 12px 32px -8px rgb(0 0 0 / 0.6);
   }
 }
 
-/* MapLibre's own controls, matched to the theme; scoped under the map to outrank its stylesheet. */
-.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-group {
-  @apply glass overflow-hidden rounded-xl;
+/* Popups over the map are glass too, with more tint since their text sits over the busiest part. Unlayered, so it outranks bg-popover. */
+[data-slot="select-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="sheet-content"] {
+  @apply bg-popover/75 backdrop-blur-xl backdrop-saturate-150;
 }
-.maplibregl-map .maplibregl-ctrl-group button {
-  @apply bg-transparent hover:bg-accent;
-}
-.maplibregl-map .maplibregl-ctrl-group button + button {
-  @apply border-border;
-}
-.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib.maplibregl-compact-show,
+
+/* MapLibre's attribution as one short line of small plain text; scoped under the map to outrank its stylesheet. */
 .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
-  @apply glass rounded-xl text-muted-foreground;
+  @apply m-1 bg-transparent p-0 text-[10px] text-muted-foreground;
 }
 .maplibregl-map .maplibregl-ctrl-attrib a {
   @apply text-muted-foreground;
-}
-.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon,
-.dark .maplibregl-ctrl-attrib-button {
-  filter: invert(1);
 }

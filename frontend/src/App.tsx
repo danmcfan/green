@@ -108,18 +108,21 @@ export default function App() {
         <ModeToggle />
       </header>
 
-      <aside className="absolute top-4 right-4 bottom-4 hidden w-96 flex-col gap-4 overflow-y-auto rounded-3xl glass p-5 lg:flex">
-        <div className="flex items-start gap-2">
-          <div className="flex-1">{heading}</div>
-          <ModeToggle />
-        </div>
-        <Separator />
-        {title}
-        <Legend layer={layer} />
-        <Separator />
-        {empty}
-        {controls}
-      </aside>
+      {/* The panel is as tall as its contents, up to the attribution line under it. */}
+      <div className="pointer-events-none absolute top-4 right-4 bottom-10 hidden w-96 flex-col lg:flex">
+        <aside className="pointer-events-auto flex max-h-full flex-col gap-4 overflow-y-auto rounded-2xl glass p-5">
+          <div className="flex items-start gap-2">
+            <div className="flex-1">{heading}</div>
+            <ModeToggle />
+          </div>
+          <Separator />
+          {title}
+          <Legend layer={layer} />
+          <Separator />
+          {empty}
+          {controls}
+        </aside>
+      </div>
     </div>
   )
 }
