@@ -30,7 +30,7 @@ export default function ModeToggle() {
           onValueChange={(value) => setTheme(Theme.parse(value))}
         >
           {THEMES.map(({ value, label, Icon }) => (
-            <DropdownMenuRadioItem key={value} value={value}>
+            <DropdownMenuRadioItem key={value} value={value} closeOnClick>
               <Icon />
               {label}
             </DropdownMenuRadioItem>

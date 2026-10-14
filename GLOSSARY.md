@@ -39,5 +39,9 @@ How wrong Predicted NDVI is on natural land next to farm land, as the RMSE over 
 A square of land (200 km by default) that the model is scored on without having seen it; the Error next to farm land is given for each one.
 _Avoid_: Region (that is the area a pipeline run covers, such as `small` or `conus`)
 
+**Region**:
+The area a pipeline run covers and its maps are published for, such as `small` (the Driftless Area) or `conus`.
+_Avoid_: Coverage area, extent, bounds
+
 **Derived layer**:
 A layer calculated from other layers rather than measured or predicted directly: the NDVI residual, Crop effect and Error next to farm land.
