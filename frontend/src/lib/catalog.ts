@@ -18,9 +18,8 @@ const YEAR = /^\d{4}/
 export function readCatalog(files: string[]): Catalog {
   const names = new Map<string, string[]>()
   for (const file of files) {
-    const match = FILE.exec(file)
-    if (!match) continue
-    const [, layer, map] = match
+    const [, layer, map] = FILE.exec(file) ?? []
+    if (layer === undefined || map === undefined) continue
     names.set(layer, [...(names.get(layer) ?? []), map])
   }
 
@@ -29,7 +28,11 @@ export function readCatalog(files: string[]): Catalog {
     maps.sort()
     const dated = maps.filter((map) => YEAR.test(map))
     const years = [...new Set(dated.map((map) => Number(map.slice(0, 4))))]
-    catalog.set(layer, { names: maps, years, monthly: maps.every((map) => MONTH.test(map)) })
+    catalog.set(layer, {
+      names: maps,
+      years,
+      monthly: maps.every((map) => MONTH.test(map)),
+    })
   }
   return catalog
 }
@@ -46,24 +49,29 @@ export interface Picked {
 }
 
 /** The map to show for a chosen time: that year and month if it exists, else the nearest. */
-export function pickMap(maps: LayerMaps, when: When): Picked {
-  if (maps.years.length === 0) return { name: maps.names[0] }
+export function pickMap(maps: LayerMaps, when: When): Picked | null {
+  const [only] = maps.names
+  if (only === undefined) return null
+  if (maps.years.length === 0) return { name: only }
   if (!maps.monthly) {
     const year = nearest(maps.years, (y) => Math.abs(y - when.year))
     return { name: String(year), year }
   }
   const months = (w: When) => w.year * 12 + w.month - 1
-  const name = nearest(maps.names, (map) => Math.abs(months(monthOf(map)) - months(when)))
+  const name = nearest(maps.names, (map) =>
+    Math.abs(months(monthOf(map)) - months(when))
+  )
   return { name, ...monthOf(name) }
 }
 
 function monthOf(map: string): When {
-  const [year, month] = map.split('-').map(Number)
-  return { year, month }
+  return { year: Number(map.slice(0, 4)), month: Number(map.slice(5, 7)) }
 }
 
 function nearest<T>(items: T[], distance: (item: T) => number): T {
-  return items.reduce((best, item) => (distance(item) < distance(best) ? item : best))
+  return items.reduce((best, item) =>
+    distance(item) < distance(best) ? item : best
+  )
 }
 
 /** PMTiles URL for one map; `site` is the absolute URL of the site root, ending in /. */
