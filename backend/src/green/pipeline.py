@@ -22,7 +22,7 @@ from green.layers import LayerDefinition, load_layers
 from green.limits import check_tiles
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
 from green.progress import Progress, step
-from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Source
+from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite, Source
 from green.store import Store
 from green.tiles import MAX_ZOOM, write_pmtiles
 from green.train import HOLDOUTS, input_stack, natural_cells, train
@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 LAST_MODIS_YEAR = 2026
 # Every year both satellites have data; the VIIRS correction is always fitted on all of them.
 OVERLAP_YEARS = list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
+# Folder of the monthly NDVI each satellite gave per overlap year, kept for the VIIRS
+# correction: <folder>/<satellite>/<year>.npz.
+CORRECTION_YEARS = "ndvi_correction_years"
 
 
 def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np.ndarray:
@@ -53,8 +56,16 @@ def ndvi_correction(source: Source, store: Store, cover_class: np.ndarray) -> np
             return saved["coeffs"]
     grid = store.grid()
     logger.info("Fitting VIIRS correction on %d–%d", OVERLAP_YEARS[0], OVERLAP_YEARS[-1])
-    modis = np.stack([source.ndvi(grid, y, "modis")[0] for y in OVERLAP_YEARS])
-    viirs = np.stack([source.ndvi(grid, y, "viirs")[0] for y in OVERLAP_YEARS])
+
+    def year_ndvi(year: int, satellite: Satellite) -> np.ndarray:
+        # Each year is saved as soon as it is fetched, so a stopped run resumes where it was.
+        def fetch():
+            return {"ndvi": source.ndvi(grid, year, satellite)[0]}
+
+        return _cached(store, f"{CORRECTION_YEARS}/{satellite}/{year}", source, fetch)["ndvi"]
+
+    modis = np.stack([year_ndvi(y, "modis") for y in OVERLAP_YEARS])
+    viirs = np.stack([year_ndvi(y, "viirs") for y in OVERLAP_YEARS])
     coeffs = fit_correction(modis, viirs, cover_class)
     store.save(
         "ndvi_correction",
@@ -108,7 +119,7 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
         _cached(store, f"ndvi/{year}", source, ndvi)
 
 
-EXTRACTED = ["soil", "land_cover", "ndvi_correction", "climate", "ndvi"]
+EXTRACTED = ["soil", "land_cover", "ndvi_correction", CORRECTION_YEARS, "climate", "ndvi"]
 
 
 def clear(store: Store, only: list[str] | None = None) -> list[Path]:
@@ -121,7 +132,7 @@ def clear(store: Store, only: list[str] | None = None) -> list[Path]:
     removed = []
     for name in only or EXTRACTED:
         folder = store.root / name
-        paths = sorted(folder.glob("*.npz")) if folder.is_dir() else [store.path(name)]
+        paths = sorted(folder.rglob("*.npz")) if folder.is_dir() else [store.path(name)]
         if only and not any(p.exists() for p in paths):
             raise FileNotFoundError(f"nothing saved for {name!r} in {store.root}")
         for path in paths:

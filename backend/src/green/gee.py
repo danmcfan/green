@@ -9,6 +9,7 @@ import io
 import logging
 import math
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -32,6 +33,13 @@ NDVI_CHUNK = 64
 # failed and 49 worked (checked 2026-10-12, issue #20).
 MAX_FINE_CHUNK = 49
 FINE_CHUNK = 48
+# Seconds a request may wait for Earth Engine to answer. The slowest chunk seen took 514 s
+# (128-cell VIIRS, issue #20); chunks are now smaller, so 15 minutes leaves plenty of margin.
+DEADLINE_SECONDS = 900
+# Times a timed-out or dropped request is sent again before the run fails, and the pause
+# in seconds before each retry.
+RETRIES = 3
+RETRY_WAIT = 30
 # The Earth Engine error for a chunk that covers too many fine pixels.
 TOO_LARGE = "Reprojection output too large"
 # Earth Engine's limit on fine pixels per coarse pixel in reduceResolution.
@@ -80,6 +88,9 @@ def initialize() -> None:
     # .env paths are relative to the repo root, wherever the pipeline runs from.
     key_file = LAYERS_FILE.parent / os.environ.get("GEE_KEY_FILE", "keys/gee-service-account.json")
     ee.Initialize(ee.ServiceAccountCredentials(email, str(key_file)))
+    # Without a deadline a request whose connection stalls waits forever: a CONUS run hung
+    # for over an hour on one NDVI chunk (2026-10-15). It now raises TimeoutError instead.
+    ee.data.setDeadline(DEADLINE_SECONDS * 1000)
 
 
 def _month_ranges(year: int) -> list[tuple[int, int]]:
@@ -103,11 +114,32 @@ class EarthEngineSource:
         """Pixels for every band, as (band, height, width) floats with NaN where masked."""
         out = np.full((len(bands), *grid.shape), np.nan, dtype=np.float32)
 
+        def compute(sub: Grid) -> bytes:
+            request = {
+                "expression": image.select(bands),
+                "fileFormat": "NPY",
+                "grid": sub.ee_grid(),
+            }
+            for attempt in range(RETRIES + 1):
+                try:
+                    return self.ee.data.computePixels(request)
+                except (TimeoutError, ConnectionError) as e:
+                    if attempt == RETRIES:
+                        raise
+                    logger.warning(
+                        "%s: chunk %d × %d failed (%s), retry %d of %d",
+                        label,
+                        *sub.shape,
+                        e,
+                        attempt + 1,
+                        RETRIES,
+                    )
+                    time.sleep(RETRY_WAIT)
+            raise AssertionError("unreachable")
+
         def fill(row: int, col: int, sub: Grid) -> None:
             try:
-                raw = self.ee.data.computePixels(
-                    {"expression": image.select(bands), "fileFormat": "NPY", "grid": sub.ee_grid()}
-                )
+                raw = compute(sub)
             except self.ee.EEException as e:
                 # Near the edges of CONUS a chunk is turned in the 30 m Albers projection, so
                 # it covers more fine pixels; split it in four and try again (issue #15).
