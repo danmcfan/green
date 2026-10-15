@@ -120,15 +120,20 @@ def test_a_request_that_keeps_timing_out_fails_the_run(source, monkeypatch):
         source.land_cover(REGIONS["small"])
 
 
-def test_initialize_sets_a_deadline_on_every_request(monkeypatch):
+def test_initialize_sets_a_deadline_and_few_client_retries(monkeypatch):
     import ee
 
     from green import gee
 
-    deadlines = []
+    deadlines, retries = [], []
     monkeypatch.setenv("GEE_EMAIL", "someone@example.com")
     monkeypatch.setattr(ee, "ServiceAccountCredentials", MagicMock())
     monkeypatch.setattr(ee, "Initialize", MagicMock())
     monkeypatch.setattr(ee.data, "setDeadline", deadlines.append)
+    monkeypatch.setattr(ee.data, "setMaxRetries", retries.append)
     gee.initialize()
     assert deadlines == [gee.DEADLINE_SECONDS * 1000]
+    assert retries == [gee.CLIENT_RETRIES]
+    # One stuck chunk must fail the run within about an hour and a half.
+    attempts = (gee.RETRIES + 1) * (gee.CLIENT_RETRIES + 1)
+    assert attempts * gee.DEADLINE_SECONDS + gee.RETRIES * gee.RETRY_WAIT <= 90 * 60

@@ -34,8 +34,11 @@ NDVI_CHUNK = 64
 MAX_FINE_CHUNK = 49
 FINE_CHUNK = 48
 # Seconds a request may wait for Earth Engine to answer. The slowest chunk seen took 514 s
-# (128-cell VIIRS, issue #20); chunks are now smaller, so 15 minutes leaves plenty of margin.
-DEADLINE_SECONDS = 900
+# (128-cell VIIRS, issue #20); chunks are now smaller, so 10 minutes leaves margin.
+DEADLINE_SECONDS = 600
+# Times the Earth Engine client itself resends a failed request (its default is 5). Each
+# resend waits out the whole deadline again, so a stuck chunk would take hours to fail.
+CLIENT_RETRIES = 1
 # Times a timed-out or dropped request is sent again before the run fails, and the pause
 # in seconds before each retry.
 RETRIES = 3
@@ -91,6 +94,7 @@ def initialize() -> None:
     # Without a deadline a request whose connection stalls waits forever: a CONUS run hung
     # for over an hour on one NDVI chunk (2026-10-15). It now raises TimeoutError instead.
     ee.data.setDeadline(DEADLINE_SECONDS * 1000)
+    ee.data.setMaxRetries(CLIENT_RETRIES)
 
 
 def _month_ranges(year: int) -> list[tuple[int, int]]:
