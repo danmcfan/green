@@ -85,6 +85,14 @@ def test_unseen_years_score_climatology_plus_gbm_on_departures():
     assert "climatology_gbm" not in report["spatial"]
 
 
+def test_departure_fit_skips_cells_with_only_one_training_year():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    # Cell (0, 0) is only seen in 2010, so it has no Departure from the other training years.
+    rows = rows.take((rows.row + rows.col > 0) | (rows.year == 2010))
+    report, *_ = evaluate(rows, (rows.row >= 2).astype(int), [2013], seed=0)
+    assert np.isfinite(report["temporal"]["climatology_gbm"]["rmse"]["mean"])
+
+
 def _cell_rows(years: list[int], y: list[float], cols: list[int] | None = None) -> Rows:
     n = len(years)
     return Rows(

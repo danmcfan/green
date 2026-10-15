@@ -162,7 +162,7 @@ def _climatology(train: Rows, test: Rows, fallback: np.ndarray | float) -> np.nd
 
 
 def _training_departures(train: Rows) -> np.ndarray:
-    """Each row's NDVI minus the mean for its cell and month over the other training years.
+    """Each row's Observed NDVI minus the mean for its cell and month over the other training years.
 
     Leaving the row's own year out keeps it from pulling its climatology toward itself, which
     would shrink the Departures. NaN where no other year has that cell and month.
