@@ -135,10 +135,10 @@ def _predict_all(train: Rows, test: Rows, seed: int, climatology: bool) -> dict[
         # Only fair for unseen years: unseen places have no history.
         test_climatology = _climatology(train, test, fallback=predictions["mean"])
         predictions["climatology"] = test_climatology
-        # Do the Input layers explain the Departure? Every training row has a climatology.
-        departure_rows = Rows(
-            **{**vars(train), "y": train.y - _climatology(train, train, fallback=0.0)}
-        )
+        # Do the Input layers explain the Departure?
+        departure = _training_departures(train)
+        has_departure = ~np.isnan(departure)
+        departure_rows = Rows(**{**vars(train), "y": departure}).take(has_departure)
         predictions["climatology_gbm"] = test_climatology + _fit(gbm(seed), departure_rows).predict(
             test.x
         )
@@ -159,6 +159,27 @@ def _climatology(train: Rows, test: Rows, fallback: np.ndarray | float) -> np.nd
     means = np.add.reduceat(train.y[order], start) / np.diff(np.append(start, len(order)))
     index = np.clip(np.searchsorted(unique, test_key), 0, len(unique) - 1)
     return np.where(unique[index] == test_key, means[index], fallback)
+
+
+def _training_departures(train: Rows) -> np.ndarray:
+    """Each row's Observed NDVI minus the mean for its cell and month over the other training years.
+
+    Leaving the row's own year out keeps it from pulling its climatology toward itself, which
+    would shrink the Departures. NaN where no other year has that cell and month.
+    """
+    cell_month = _group(train.row, train.col, train.month)
+    own_year = _group(train.row, train.col, train.month, train.year)
+    others_sum = (
+        np.bincount(cell_month, train.y)[cell_month] - np.bincount(own_year, train.y)[own_year]
+    )
+    others_count = np.bincount(cell_month)[cell_month] - np.bincount(own_year)[own_year]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(others_count > 0, train.y - others_sum / others_count, np.nan)
+
+
+def _group(*keys: np.ndarray) -> np.ndarray:
+    """A group index for each row, shared by rows with equal `keys`."""
+    return np.unique(np.stack(keys), axis=1, return_inverse=True)[1].ravel()
 
 
 def _departure_r2(observed: np.ndarray, predicted: np.ndarray, usual: np.ndarray) -> float:

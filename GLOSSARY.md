@@ -29,7 +29,7 @@ Observed NDVI minus Predicted NDVI on natural land, for a place and month; where
 _Avoid_: Error map, anomaly
 
 **Departure**:
-Observed NDVI minus the mean Observed NDVI for the same place and month in the training years; how unusual a year is. Only a place with a history has one.
+Observed NDVI minus the mean Observed NDVI for the same place and month in the training years; how unusual a year is. Only a place with a history has one. When fitting to training rows, the mean leaves out the row's own year, so a row does not pull its own baseline toward itself.
 _Avoid_: Anomaly
 
 **Error next to farm land**:
