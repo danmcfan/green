@@ -1,6 +1,15 @@
 import numpy as np
 
-from green.train import HOLDOUTS, Rows, assign_folds, evaluate, held_out_years, metrics
+from green.train import (
+    HOLDOUTS,
+    Rows,
+    _climatology,
+    _training_departures,
+    assign_folds,
+    evaluate,
+    held_out_years,
+    metrics,
+)
 
 
 def test_folds_keep_each_block_together():
@@ -74,3 +83,34 @@ def test_unseen_years_score_climatology_plus_gbm_on_departures():
     assert abs(departure["climatology"]) < 1e-9
     assert departure["climatology_gbm"] > 0.5
     assert "climatology_gbm" not in report["spatial"]
+
+
+def _cell_rows(years: list[int], y: list[float], cols: list[int] | None = None) -> Rows:
+    n = len(years)
+    return Rows(
+        x=np.zeros((n, 1)),
+        y=np.array(y),
+        weight=np.ones(n),
+        year=np.array(years),
+        month=np.zeros(n, dtype=int),
+        row=np.zeros(n, dtype=int),
+        col=np.array(cols if cols is not None else [0] * n),
+    )
+
+
+def test_training_departures_leave_out_the_rows_own_year():
+    a, b = 0.7, 0.4
+    departure = _training_departures(_cell_rows([2010, 2011], [a, b]))
+    np.testing.assert_allclose(departure, [a - b, b - a])
+
+
+def test_training_departure_is_missing_without_another_year():
+    departure = _training_departures(_cell_rows([2010, 2010, 2011], [0.5, 0.6, 0.3], [1, 0, 0]))
+    assert np.isnan(departure[0])
+    np.testing.assert_allclose(departure[1:], [0.3, -0.3])
+
+
+def test_test_time_climatology_uses_every_training_year():
+    train = _cell_rows([2010, 2011], [0.7, 0.4])
+    test = _cell_rows([2012], [0.0])
+    np.testing.assert_allclose(_climatology(train, test, fallback=0.0), [0.55])
