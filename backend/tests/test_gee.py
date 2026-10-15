@@ -85,3 +85,55 @@ def test_other_earth_engine_errors_are_not_retried(source):
     source.ee.data.computePixels = compute_pixels
     with pytest.raises(Exception, match="memory"):
         source.land_cover(REGIONS["small"])
+
+
+def _failing_first(source, failures):
+    """Make computePixels raise each of `failures` in turn before it answers."""
+    answer = source.ee.data.computePixels
+    left = list(failures)
+    calls = []
+
+    def compute_pixels(request):
+        calls.append(request)
+        if left:
+            raise left.pop(0)
+        return answer(request)
+
+    source.ee.data.computePixels = compute_pixels
+    return calls
+
+
+def test_a_request_that_times_out_is_retried(source, monkeypatch):
+    """A hung request ends at the deadline (a TimeoutError) and is asked again."""
+    monkeypatch.setattr("green.gee.RETRY_WAIT", 0)
+    calls = _failing_first(source, [TimeoutError("read timed out")])
+    share, _ = source.land_cover(REGIONS["small"])
+    assert not np.isnan(share).any()
+    assert len(calls) == len(source.sizes) + 1
+
+
+def test_a_request_that_keeps_timing_out_fails_the_run(source, monkeypatch):
+    monkeypatch.setattr("green.gee.RETRY_WAIT", 0)
+    source.ee.EEException = Exception
+    _failing_first(source, [TimeoutError("read timed out")] * 100)
+    with pytest.raises(TimeoutError):
+        source.land_cover(REGIONS["small"])
+
+
+def test_initialize_sets_a_deadline_and_few_client_retries(monkeypatch):
+    import ee
+
+    from green import gee
+
+    deadlines, retries = [], []
+    monkeypatch.setenv("GEE_EMAIL", "someone@example.com")
+    monkeypatch.setattr(ee, "ServiceAccountCredentials", MagicMock())
+    monkeypatch.setattr(ee, "Initialize", MagicMock())
+    monkeypatch.setattr(ee.data, "setDeadline", deadlines.append)
+    monkeypatch.setattr(ee.data, "setMaxRetries", retries.append)
+    gee.initialize()
+    assert deadlines == [gee.DEADLINE_SECONDS * 1000]
+    assert retries == [gee.CLIENT_RETRIES]
+    # One stuck chunk must fail the run within about an hour and a half.
+    attempts = (gee.RETRIES + 1) * (gee.CLIENT_RETRIES + 1)
+    assert attempts * gee.DEADLINE_SECONDS + gee.RETRIES * gee.RETRY_WAIT <= 90 * 60

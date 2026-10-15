@@ -264,3 +264,49 @@ def test_clear_fails_on_a_name_with_nothing_saved(tmp_path):
     store = _store(tmp_path)
     with pytest.raises(FileNotFoundError, match="land_cvoer"):
         pipeline.clear(store, ["land_cvoer"])
+
+
+class StoppingSource(CountingSource):
+    """Synthetic data that stops the run, as Ctrl-C or a failed request would, after `limit`."""
+
+    def __init__(self, limit):
+        super().__init__()
+        self.limit = limit
+
+    def ndvi(self, grid, year, satellite):
+        if len(self.fetched) == self.limit:
+            raise KeyboardInterrupt
+        return super().ndvi(grid, year, satellite)
+
+
+def test_a_stopped_viirs_correction_resumes_from_the_years_it_fetched(tmp_path):
+    whole, _ = _extract(tmp_path / "whole", [2012])
+    store = _store(tmp_path / "resumed")
+    stopping = StoppingSource(limit=20)
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.extract(stopping, store, [2012])
+    source = CountingSource()
+    resumed, _ = _extract(tmp_path / "resumed", [2012], source)
+    years = range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1)
+    overlap = {(y, s) for s in ("modis", "viirs") for y in years}
+    # Plus 2012 VIIRS once more, for the run's own Observed NDVI.
+    assert sorted(source.fetched) == sorted([*(overlap - set(stopping.fetched)), (2012, "viirs")])
+    np.testing.assert_array_equal(whole, resumed)
+
+
+def test_saved_correction_years_from_another_source_are_fetched_again(tmp_path):
+    store = _store(tmp_path)
+    with pytest.raises(KeyboardInterrupt):
+        pipeline.extract(StoppingSource(limit=4), store, [2012])
+    source = CountingSource(seed=1)
+    pipeline.extract(source, store, [2012])
+    assert len(source.fetched) == 2 * len(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1)) + 1
+
+
+def test_clear_deletes_the_saved_correction_years(tmp_path):
+    store = _store(tmp_path)
+    pipeline.extract(SyntheticSource(), store, [2012])
+    removed = pipeline.clear(store, ["ndvi_correction_years/viirs"])
+    assert {p.parent.name for p in removed} == {"viirs"}
+    pipeline.clear(store)
+    assert not list(tmp_path.rglob("*.npz"))
