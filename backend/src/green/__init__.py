@@ -29,7 +29,18 @@ def _source(name: str, workers: int):
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="green", description=__doc__)
     parser.add_argument(
-        "step", choices=["run", "extract", "train", "predict", "crops", "tiles", "publish", "clear"]
+        "step",
+        choices=[
+            "run",
+            "extract",
+            "train",
+            "predict",
+            "crops",
+            "tiles",
+            "publish",
+            "clear",
+            "watch",
+        ],
     )
     parser.add_argument("--region", choices=sorted(REGIONS), default="small")
     parser.add_argument("--source", choices=["gee", "synthetic"], default="gee")
@@ -47,7 +58,12 @@ def main(argv: list[str] | None = None) -> None:
         nargs="+",
         help="for clear: saved files or folders to delete, e.g. land_cover ndvi/2012 climate",
     )
+    parser.add_argument("--log", type=Path, default=ROOT / "run.log", help="for watch: the log")
     args = parser.parse_args(argv)
+    if args.step == "watch":
+        from green.watch import watch
+
+        return watch(args.log)
 
     logging.basicConfig(
         level=logging.INFO,

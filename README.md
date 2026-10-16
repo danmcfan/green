@@ -58,6 +58,13 @@ task pipeline -- run --region small --start 2010 --end 2013   # extract → trai
 task pipeline -- publish --region small --tag tiles-2026-10   # upload the PMTiles to a GitHub Release and deploy it
 ```
 
+To follow a run, write its log to a file and watch it from another terminal. The view shows each download's progress and the latest warnings and errors:
+
+```sh
+task pipeline -- run --region conus --start 2008 --end 2013 > run.log 2>&1
+task pipeline:watch            # or LOG=other.log
+```
+
 Extract saves each download under `data/<region>/` and reuses it on the next run, so a run that fails part way starts again where it stopped. To fetch data again, delete it:
 
 ```sh

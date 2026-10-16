@@ -75,6 +75,11 @@ tasks:
     dir: backend
     cmd: uv run green {{.CLI_ARGS}}
 
+  pipeline:watch:
+    desc: "Show a live view of a pipeline log's progress and problems, e.g. task pipeline:watch LOG=run.log"
+    dir: backend
+    cmd: uv run green watch --log {{.ROOT_DIR}}/{{.LOG | default "run.log"}}
+
   pipeline:fixture:
     desc: Run the full pipeline on a small region with synthetic data and produce PMTiles
     dir: backend
