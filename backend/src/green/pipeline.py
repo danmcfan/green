@@ -29,7 +29,8 @@ from green.train import HOLDOUTS, input_stack, natural_cells, train
 
 logger = logging.getLogger(__name__)
 
-# Terra stops collecting science data in about early 2027 (ADR 0005).
+# Terra stops collecting science data in about early 2027 (ADR 0005). Observed NDVI comes
+# from MODIS up to this year and from corrected VIIRS after it (ADR 0007).
 LAST_MODIS_YEAR = 2026
 # Every year both satellites have data; the VIIRS correction is always fitted on all of them.
 OVERLAP_YEARS = list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
@@ -108,7 +109,7 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
         _cached(store, f"climate/{year}", source, lambda year=year: source.climate(grid, year))
 
         def ndvi(year=year):
-            if year < FIRST_VIIRS_YEAR:
+            if year <= LAST_MODIS_YEAR:
                 ndvi, good = source.ndvi(grid, year, "modis")
             else:
                 coeffs = ndvi_correction(source, store, cover_class)

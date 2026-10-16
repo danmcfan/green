@@ -15,6 +15,9 @@ from green.pipeline import LAST_MODIS_YEAR
 from green.sources import COVER_CLASSES, SyntheticSource
 from green.store import Store
 
+# The first year after Terra stops, so the first that needs the VIIRS correction.
+VIIRS_YEAR = LAST_MODIS_YEAR + 1
+
 
 @pytest.fixture(scope="module")
 def run(tmp_path_factory):
@@ -55,10 +58,9 @@ def test_saves_model_with_scaler_metadata_and_scores(run):
     assert "climatology" in scores["temporal"]
 
 
-def test_viirs_years_are_corrected_towards_modis(run):
-    data = run / "data" / "small"
-    with np.load(data / "ndvi_correction.npz") as f:
-        slope, intercept = f["coeffs"][2, 6]  # grass, July
+def test_viirs_years_are_corrected_towards_modis(tmp_path):
+    coeffs, _ = _extract(tmp_path, [VIIRS_YEAR])
+    slope, intercept = coeffs[2, 6]  # grass, July
     # The synthetic VIIRS is 0.9·MODIS + 0.03, so the fit inverts it.
     assert slope == pytest.approx(1 / 0.9, rel=0.05)
     assert intercept == pytest.approx(-0.03 / 0.9, abs=0.02)
@@ -181,37 +183,38 @@ def _extract(root, years, source=None):
 
 def test_viirs_correction_is_fitted_on_every_overlap_year_whatever_years_a_run_covers(tmp_path):
     # ADR 0005: two runs with different years must give the same Observed NDVI.
-    one_year, fitted_on = _extract(tmp_path / "a", [2012])
-    other_years, _ = _extract(tmp_path / "b", [2011, 2018, 2019])
+    one_year, fitted_on = _extract(tmp_path / "a", [VIIRS_YEAR])
+    other_years, _ = _extract(tmp_path / "b", [2011, VIIRS_YEAR, VIIRS_YEAR + 1])
     np.testing.assert_array_equal(one_year, other_years)
     assert list(fitted_on) == list(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1))
 
 
 def test_viirs_correction_is_fitted_once_per_region_and_reused(tmp_path):
-    first, _ = _extract(tmp_path, [2012])
+    first, _ = _extract(tmp_path, [VIIRS_YEAR])
     source = CountingSource()
-    again, _ = _extract(tmp_path, [2013, 2014], source)
+    again, _ = _extract(tmp_path, [VIIRS_YEAR + 1, VIIRS_YEAR + 2], source)
     np.testing.assert_array_equal(first, again)
-    assert sorted(source.fetched) == [(2013, "viirs"), (2014, "viirs")]
+    assert sorted(source.fetched) == [(VIIRS_YEAR + 1, "viirs"), (VIIRS_YEAR + 2, "viirs")]
 
 
 def test_viirs_correction_from_another_source_is_not_reused(tmp_path):
     # A synthetic run must not leave coefficients that a later run on other data applies.
-    first, _ = _extract(tmp_path, [2012])
+    first, _ = _extract(tmp_path, [VIIRS_YEAR])
     source = CountingSource(seed=1)
-    again, _ = _extract(tmp_path, [2013], source)
+    again, _ = _extract(tmp_path, [VIIRS_YEAR + 1], source)
     assert not np.array_equal(first, again)
     assert (2012, "viirs") in source.fetched and (2026, "modis") in source.fetched
     with np.load(Store(tmp_path).path("ndvi_correction")) as f:
         assert str(f["source"]) == "synthetic-1"
 
 
-def test_modis_only_run_fetches_no_viirs_and_fits_no_correction(tmp_path):
+def test_every_year_terra_covers_uses_modis_and_fits_no_correction(tmp_path):
+    # ADR 0007: VIIRS is only needed once Terra stops.
     source = CountingSource()
     store = Store(tmp_path)
     store.save_grid(REGIONS["small"])
-    pipeline.extract(source, store, [2010, 2011])
-    assert sorted(source.fetched) == [(2010, "modis"), (2011, "modis")]
+    pipeline.extract(source, store, [2011, 2012, LAST_MODIS_YEAR])
+    assert sorted(source.fetched) == [(2011, "modis"), (2012, "modis"), (LAST_MODIS_YEAR, "modis")]
     assert not store.path("ndvi_correction").exists()
 
 
@@ -280,32 +283,33 @@ class StoppingSource(CountingSource):
 
 
 def test_a_stopped_viirs_correction_resumes_from_the_years_it_fetched(tmp_path):
-    whole, _ = _extract(tmp_path / "whole", [2012])
+    whole, _ = _extract(tmp_path / "whole", [VIIRS_YEAR])
     store = _store(tmp_path / "resumed")
     stopping = StoppingSource(limit=20)
     with pytest.raises(KeyboardInterrupt):
-        pipeline.extract(stopping, store, [2012])
+        pipeline.extract(stopping, store, [VIIRS_YEAR])
     source = CountingSource()
-    resumed, _ = _extract(tmp_path / "resumed", [2012], source)
+    resumed, _ = _extract(tmp_path / "resumed", [VIIRS_YEAR], source)
     years = range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1)
     overlap = {(y, s) for s in ("modis", "viirs") for y in years}
-    # Plus 2012 VIIRS once more, for the run's own Observed NDVI.
-    assert sorted(source.fetched) == sorted([*(overlap - set(stopping.fetched)), (2012, "viirs")])
+    # Plus the run's own year, which only VIIRS covers.
+    expected = [*(overlap - set(stopping.fetched)), (VIIRS_YEAR, "viirs")]
+    assert sorted(source.fetched) == sorted(expected)
     np.testing.assert_array_equal(whole, resumed)
 
 
 def test_saved_correction_years_from_another_source_are_fetched_again(tmp_path):
     store = _store(tmp_path)
     with pytest.raises(KeyboardInterrupt):
-        pipeline.extract(StoppingSource(limit=4), store, [2012])
+        pipeline.extract(StoppingSource(limit=4), store, [VIIRS_YEAR])
     source = CountingSource(seed=1)
-    pipeline.extract(source, store, [2012])
+    pipeline.extract(source, store, [VIIRS_YEAR])
     assert len(source.fetched) == 2 * len(range(FIRST_VIIRS_YEAR, LAST_MODIS_YEAR + 1)) + 1
 
 
 def test_clear_deletes_the_saved_correction_years(tmp_path):
     store = _store(tmp_path)
-    pipeline.extract(SyntheticSource(), store, [2012])
+    pipeline.extract(SyntheticSource(), store, [VIIRS_YEAR])
     removed = pipeline.clear(store, ["ndvi_correction_years/viirs"])
     assert {p.parent.name for p in removed} == {"viirs"}
     pipeline.clear(store)
