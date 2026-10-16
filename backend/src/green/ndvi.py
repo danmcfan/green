@@ -2,6 +2,7 @@
 
 import numpy as np
 
+# The first year VIIRS has data; the correction is fitted from here (ADR 0005).
 FIRST_VIIRS_YEAR = 2012
 
 
