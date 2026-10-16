@@ -43,8 +43,10 @@ CLIENT_RETRIES = 1
 # in seconds before each retry.
 RETRIES = 3
 RETRY_WAIT = 30
-# The Earth Engine error for a chunk that covers too many fine pixels.
-TOO_LARGE = "Reprojection output too large"
+# Earth Engine errors for a chunk that is too big to compute in one request; the chunk is
+# split in four and asked again. A 128-cell climate chunk ran out of memory over CONUS
+# (2013, 2026-10-16).
+TOO_LARGE = ("Reprojection output too large", "User memory limit exceeded")
 # Earth Engine's limit on fine pixels per coarse pixel in reduceResolution.
 MAX_PIXELS = 65535
 # A 4 km cell needs at least half of its fine pixels valid (docs/research §3).
@@ -146,9 +148,10 @@ class EarthEngineSource:
                 raw = compute(sub)
             except self.ee.EEException as e:
                 # Near the edges of CONUS a chunk is turned in the 30 m Albers projection, so
-                # it covers more fine pixels; split it in four and try again (issue #15).
+                # it covers more fine pixels; split it in four and try again (issue #15). A
+                # chunk that runs out of memory is split the same way.
                 size = max(sub.width, sub.height)
-                if TOO_LARGE not in str(e) or size == 1:
+                if not any(error in str(e) for error in TOO_LARGE) or size == 1:
                     raise
                 logger.warning("%s: chunk %d × %d too large, splitting", label, *sub.shape)
                 for r, c, part in sub.chunks(math.ceil(size / 2)):

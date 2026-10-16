@@ -59,14 +59,17 @@ def test_ndvi_is_fetched_in_its_own_chunks(source, satellite):
     assert not np.isnan(ndvi).any() and not np.isnan(good).any()
 
 
-def test_chunk_too_large_to_reproject_is_split_and_retried(source):
+@pytest.mark.parametrize(
+    "error", ["Reprojection output too large (7651x8815 pixels).", "User memory limit exceeded."]
+)
+def test_chunk_too_large_to_compute_is_split_and_retried(source, error):
     """Near the edges of CONUS a chunk covers more 30 m pixels, and Earth Engine refuses it."""
     accept = source.ee.data.computePixels
 
     def compute_pixels(request):
         dims = request["grid"]["dimensions"]
         if max(dims["width"], dims["height"]) > FINE_CHUNK // 2:
-            raise source.ee.EEException("Reprojection output too large (7651x8815 pixels).")
+            raise source.ee.EEException(error)
         return accept(request)
 
     source.ee.EEException = Exception
@@ -79,11 +82,11 @@ def test_chunk_too_large_to_reproject_is_split_and_retried(source):
 
 def test_other_earth_engine_errors_are_not_retried(source):
     def compute_pixels(request):
-        raise source.ee.EEException("User memory limit exceeded.")
+        raise source.ee.EEException("Image.select: Band pattern 'b0' did not match any bands.")
 
     source.ee.EEException = Exception
     source.ee.data.computePixels = compute_pixels
-    with pytest.raises(Exception, match="memory"):
+    with pytest.raises(Exception, match="did not match"):
         source.land_cover(REGIONS["small"])
 
 
