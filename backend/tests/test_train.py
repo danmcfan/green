@@ -1,13 +1,16 @@
 import numpy as np
 
+from green.sources import CLIMATE_LAYERS, SOIL_LAYERS
 from green.train import (
     HOLDOUTS,
+    INPUT_LAYERS,
     Rows,
     _climatology,
     _training_departures,
     assign_folds,
     evaluate,
     held_out_years,
+    input_stack,
     metrics,
 )
 
@@ -122,3 +125,30 @@ def test_test_time_climatology_uses_every_training_year():
     train = _cell_rows([2010, 2011], [0.7, 0.4])
     test = _cell_rows([2012], [0.0])
     np.testing.assert_allclose(_climatology(train, test, fallback=0.0), [0.55])
+
+
+def _climate(prcp: list[float]) -> dict[str, np.ndarray]:
+    """One cell's climate for a year, with every layer but rainfall at zero."""
+    climate = {name: np.zeros((12, 1, 1)) for name in CLIMATE_LAYERS}
+    climate["climate_prcp"] = np.array(prcp, dtype=float).reshape(12, 1, 1)
+    return climate
+
+
+SOIL = {name: np.zeros((1, 1)) for name in SOIL_LAYERS}
+RECENT = INPUT_LAYERS.index("recent_prcp")
+
+
+def test_recent_rainfall_is_the_mean_over_the_previous_three_months():
+    x = input_stack(SOIL, _climate(list(range(101, 113))), _climate(list(range(1, 13))))
+
+    # January looks back to October-December of last year; April to January-March.
+    expected = [(10 + 11 + 12) / 3, (11 + 12 + 101) / 3, (12 + 101 + 102) / 3]
+    expected += list(range(102, 111))
+    np.testing.assert_allclose(x[:, 0, 0, RECENT], expected)
+
+
+def test_recent_rainfall_is_missing_early_in_the_year_without_last_years_climate():
+    x = input_stack(SOIL, _climate(list(range(101, 113))), None)
+
+    assert np.isnan(x[:3, 0, 0, RECENT]).all()
+    assert x[3, 0, 0, RECENT] == 102

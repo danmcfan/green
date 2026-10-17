@@ -25,7 +25,7 @@ from green.progress import Progress, step
 from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite, Source
 from green.store import Store
 from green.tiles import MAX_ZOOM, write_pmtiles
-from green.train import HOLDOUTS, input_stack, natural_cells, train
+from green.train import HOLDOUTS, input_stack, last_year_climate, natural_cells, train
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,11 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
 
     cover_class = _cached(store, "land_cover", source, land_cover)["cover_class"]
 
+    # The recent rainfall Input layer for early months of the first year needs the year before.
+    if years:
+        lead_in = min(years) - 1
+        _cached(store, f"climate/{lead_in}", source, lambda: source.climate(grid, lead_in))
+
     for i, year in enumerate(years, start=1):
         logger.info("Extracting %d (year %d of %d)", year, i, len(years))
         _cached(store, f"climate/{year}", source, lambda year=year: source.climate(grid, year))
@@ -148,10 +153,10 @@ def predict(store: Store, model_path: Path) -> None:
     model = joblib.load(model_path)
     soil = store.load("soil")
     natural = natural_cells(store)
-    years = store.years("climate")
+    years = store.years("ndvi")
     progress = Progress("Predicting years", len(years), interval=0)
     for year in years:
-        x = input_stack(soil, store.load(f"climate/{year}"))
+        x = input_stack(soil, store.load(f"climate/{year}"), last_year_climate(store, year))
         valid = ~np.isnan(x).any(axis=-1)
         predicted = np.full(valid.shape, np.nan)
         predicted[valid] = model["pipeline"].predict(x[valid])
@@ -198,7 +203,8 @@ def _layer_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]
     """Every (name, 2D array) map for a layer: one map, or one per year or month."""
 
     def monthly(kind: str, key: str):
-        for year in store.years(kind):
+        # Only the years with Observed NDVI: not the climate lead-in year before them.
+        for year in store.years("ndvi" if kind == "climate" else kind):
             values = store.load(f"{kind}/{year}")[key]
             for month in range(12):
                 yield f"{year}-{month + 1:02d}", values[month]

@@ -246,6 +246,7 @@ def test_clear_only_deletes_the_named_files_and_folders(tmp_path):
     pipeline.extract(SyntheticSource(), store, [2010, 2011])
     removed = pipeline.clear(store, ["ndvi/2011", "climate"])
     assert sorted(p.relative_to(tmp_path).as_posix() for p in removed) == [
+        "climate/2009.npz",
         "climate/2010.npz",
         "climate/2011.npz",
         "ndvi/2011.npz",
@@ -314,3 +315,10 @@ def test_clear_deletes_the_saved_correction_years(tmp_path):
     assert {p.parent.name for p in removed} == {"viirs"}
     pipeline.clear(store)
     assert not list(tmp_path.rglob("*.npz"))
+
+
+def test_extract_fetches_climate_for_the_year_before_the_first_for_recent_rainfall(tmp_path):
+    store = _store(tmp_path)
+    pipeline.extract(SyntheticSource(), store, [2010, 2011])
+    assert store.years("climate") == [2009, 2010, 2011]
+    assert store.years("ndvi") == [2010, 2011]
