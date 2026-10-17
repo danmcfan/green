@@ -16,6 +16,10 @@ TILE_SIZE = 256
 MIN_ZOOM = 2
 # ~2.4 km pixels at the equator, finer than a 4 km cell.
 MAX_ZOOM = 6
+# Tiles are 8-bit palette PNGs: index 0 is missing (transparent) and the rest are this many
+# evenly spaced steps along the layer's colors. Over CONUS this halves the PMTiles next to
+# RGBA, which for 2008-2013 (1.10 GB) passed the Pages limit, and no step is visible.
+PALETTE_STEPS = 255
 
 
 def _hex(color: str) -> tuple[int, int, int]:
@@ -34,6 +38,18 @@ def colorize(values: np.ndarray, layer: LayerDefinition) -> np.ndarray:
     rgb = stops[lower] * (1 - t) + stops[lower + 1] * t
     alpha = np.where(np.isnan(values), 0, 255)[..., None]
     return np.round(np.concatenate([rgb, alpha], axis=-1)).astype(np.uint8)
+
+
+def _palette_image(values: np.ndarray, layer: LayerDefinition) -> Image.Image:
+    """Palette image of `values`, each drawn in its nearest PALETTE_STEPS color."""
+    low, high = layer.range
+    steps = colorize(np.linspace(low, high, PALETTE_STEPS), layer)
+    position = np.clip((values - low) / (high - low), 0, 1) * (PALETTE_STEPS - 1)
+    index = np.where(np.isnan(values), 0, np.round(np.nan_to_num(position)) + 1)
+    image = Image.fromarray(index.astype(np.uint8), "P")
+    image.putpalette([0, 0, 0, *steps[:, :3].ravel().tolist()])
+    image.info["transparency"] = 0
+    return image
 
 
 def _lon_to_x(lon: float, zoom: int) -> float:
@@ -56,7 +72,7 @@ def tiles_covering(grid: Grid, zoom: int) -> list[tuple[int, int, int]]:
 def render_tile(
     values: np.ndarray, grid: Grid, layer: LayerDefinition, z: int, x: int, y: int
 ) -> bytes | None:
-    """PNG of one web-mercator tile, sampled nearest-cell; None if it holds no values."""
+    """Palette PNG of one web-mercator tile, sampled nearest-cell; None if it holds no values."""
     n = 2**z
     px = (x + (np.arange(TILE_SIZE) + 0.5) / TILE_SIZE) / n
     py = (y + (np.arange(TILE_SIZE) + 0.5) / TILE_SIZE) / n
@@ -75,7 +91,7 @@ def render_tile(
     if np.isnan(sampled).all():
         return None
     buffer = io.BytesIO()
-    Image.fromarray(colorize(sampled, layer), "RGBA").save(buffer, "PNG", optimize=True)
+    _palette_image(sampled, layer).save(buffer, "PNG", optimize=True, transparency=0)
     return buffer.getvalue()
 
 
