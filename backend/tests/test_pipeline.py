@@ -34,6 +34,7 @@ def run(tmp_path_factory):
             "--data-dir", str(root / "data"),
             "--models-dir", str(root / "models"),
             "--tiles-dir", str(root / "tiles"),
+            "--logs-dir", str(root),
         ]
     )  # fmt: skip
     return root
@@ -322,3 +323,21 @@ def test_extract_fetches_climate_for_the_year_before_the_first_for_recent_rainfa
     pipeline.extract(SyntheticSource(), store, [2010, 2011])
     assert store.years("climate") == [2009, 2010, 2011]
     assert store.years("ndvi") == [2010, 2011]
+
+
+def test_every_train_run_replaces_train_log_with_its_own_output(run):
+    args = [
+        "train",
+        "--region", "small",
+        "--block-km", "25",
+        "--data-dir", str(run / "data"),
+        "--models-dir", str(run / "models"),
+        "--logs-dir", str(run),
+    ]  # fmt: skip
+    for _ in range(2):
+        (run / "train.log").write_text("from an earlier run\n")
+        main(args)
+        log = (run / "train.log").read_text()
+        assert "from an earlier run" not in log
+        assert "Fitting final model" in log
+        assert '"folds"' in log

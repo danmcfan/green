@@ -12,6 +12,7 @@ from green.train import (
     held_out_years,
     input_stack,
     metrics,
+    run_size,
 )
 
 
@@ -152,3 +153,24 @@ def test_recent_rainfall_is_missing_early_in_the_year_without_last_years_climate
 
     assert np.isnan(x[:3, 0, 0, RECENT]).all()
     assert x[3, 0, 0, RECENT] == 102
+
+
+def test_run_size_counts_natural_cells_and_spatial_blocks_big_enough_to_score():
+    # Two spatial blocks of 10 by 10 cells.
+    blocks = np.zeros((10, 20), dtype=int)
+    blocks[:, 10:] = 1
+    natural_share = np.zeros((10, 20))
+    farm = np.zeros((10, 20), dtype=bool)
+    # Left block: 90 natural cells, only the 10 in column 8 next to the farm column 9.
+    natural_share[:, :9] = 0.75
+    farm[:, 9] = True
+    # Right block: 30 natural cells, all next to farm land, and some cells not natural enough.
+    farm[:, [13, 17]] = True
+    natural_share[:, [12, 14, 18]] = 0.9
+    natural_share[:, 19] = 0.7
+    assert run_size(natural_share, farm, blocks, [2011, 2012]) == {
+        "natural_cells": 120,
+        "blocks_with_50_natural_cells": 1,
+        "blocks_with_25_natural_cells_next_to_farm": 1,
+        "years": [2011, 2012],
+    }

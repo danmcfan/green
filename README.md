@@ -58,10 +58,10 @@ task pipeline -- run --region small --start 2010 --end 2013   # extract → trai
 task pipeline -- publish --region small --tag tiles-2026-10   # upload the PMTiles to a GitHub Release and deploy it
 ```
 
-To follow a run, write its log to a file and watch it from another terminal. The view shows each download's progress and the latest warnings and errors:
+Each step writes its log to `<step>.log` at the repo root (`run.log`, `train.log`, …) as well as to the terminal, and each run replaces that file. `--logs-dir` puts the logs somewhere else. To follow a run, watch its log from another terminal. The view shows each download's progress and the latest warnings and errors:
 
 ```sh
-task pipeline -- run --region conus --start 2008 --end 2013 > run.log 2>&1
+task pipeline -- run --region conus --start 2008 --end 2013
 task pipeline:watch            # or LOG=other.log
 ```
 
