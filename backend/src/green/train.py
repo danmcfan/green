@@ -20,7 +20,9 @@ from green.store import Store
 
 logger = logging.getLogger(__name__)
 
-INPUT_LAYERS = (*SOIL_LAYERS, *CLIMATE_LAYERS, "month_sin", "month_cos")
+# Mean rainfall over the RECENT_MONTHS before each month: soil and plants lag the weather.
+RECENT_MONTHS = 3
+INPUT_LAYERS = (*SOIL_LAYERS, *CLIMATE_LAYERS, "recent_prcp", "month_sin", "month_cos")
 # A cell trains the model only when natural cover fills most of it (docs/research §4).
 NATURAL_SHARE = 0.75
 HELD_OUT_YEARS = 3
@@ -28,16 +30,45 @@ HELD_OUT_YEARS = 3
 HOLDOUTS = ("spatial", "temporal", "combined")
 
 
-def input_stack(soil: dict[str, np.ndarray], climate: dict[str, np.ndarray]) -> np.ndarray:
-    """(12, height, width, layer) Input layers for one year, in INPUT_LAYERS order."""
+def input_stack(
+    soil: dict[str, np.ndarray],
+    climate: dict[str, np.ndarray],
+    last_year: dict[str, np.ndarray] | None,
+) -> np.ndarray:
+    """(12, height, width, layer) Input layers for one year, in INPUT_LAYERS order.
+
+    `last_year` is the previous year's climate, for recent rainfall early in the year; without
+    it, those months' recent rainfall is NaN.
+    """
     months, height, width = climate[CLIMATE_LAYERS[0]].shape
     angle = 2 * np.pi * np.arange(months) / 12
     columns = [np.broadcast_to(soil[name], (months, height, width)) for name in SOIL_LAYERS]
     columns += [climate[name] for name in CLIMATE_LAYERS]
+    columns.append(_recent_prcp(climate, last_year))
     columns += [
         np.broadcast_to(f(angle)[:, None, None], (months, height, width)) for f in (np.sin, np.cos)
     ]
     return np.stack(columns, axis=-1)
+
+
+def _recent_prcp(
+    climate: dict[str, np.ndarray], last_year: dict[str, np.ndarray] | None
+) -> np.ndarray:
+    prcp = climate["climate_prcp"]
+    before = (
+        last_year["climate_prcp"][-RECENT_MONTHS:]
+        if last_year is not None
+        else np.full((RECENT_MONTHS, *prcp.shape[1:]), np.nan)
+    )
+    window = np.lib.stride_tricks.sliding_window_view(
+        np.concatenate([before, prcp]), RECENT_MONTHS, axis=0
+    )
+    return window[:-1].mean(axis=-1)
+
+
+def last_year_climate(store: Store, year: int) -> dict[str, np.ndarray] | None:
+    """The climate for the year before `year`, if it has been extracted."""
+    return store.load(f"climate/{year - 1}") if year - 1 in store.years("climate") else None
 
 
 def natural_cells(store: Store) -> np.ndarray:
@@ -80,7 +111,7 @@ def build_rows(store: Store) -> Rows:
     parts = []
     for year in store.years("ndvi"):
         observed = store.load(f"ndvi/{year}")
-        x = input_stack(soil, store.load(f"climate/{year}"))
+        x = input_stack(soil, store.load(f"climate/{year}"), last_year_climate(store, year))
         y = observed["ndvi"]
         keep = natural & ~np.isnan(y) & ~np.isnan(x).any(axis=-1)
         month, row, col = np.nonzero(keep)
