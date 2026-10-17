@@ -34,6 +34,7 @@ def run(tmp_path_factory):
             "--data-dir", str(root / "data"),
             "--models-dir", str(root / "models"),
             "--tiles-dir", str(root / "tiles"),
+            "--logs-dir", str(root),
         ]
     )  # fmt: skip
     return root
@@ -314,3 +315,21 @@ def test_clear_deletes_the_saved_correction_years(tmp_path):
     assert {p.parent.name for p in removed} == {"viirs"}
     pipeline.clear(store)
     assert not list(tmp_path.rglob("*.npz"))
+
+
+def test_every_train_run_replaces_train_log_with_its_own_output(run):
+    args = [
+        "train",
+        "--region", "small",
+        "--block-km", "25",
+        "--data-dir", str(run / "data"),
+        "--models-dir", str(run / "models"),
+        "--logs-dir", str(run),
+    ]  # fmt: skip
+    for _ in range(2):
+        (run / "train.log").write_text("from an earlier run\n")
+        main(args)
+        log = (run / "train.log").read_text()
+        assert "from an earlier run" not in log
+        assert "Fitting final model" in log
+        assert '"folds"' in log
