@@ -12,9 +12,10 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from green.crops import near_farm
 from green.grid import spatial_blocks
 from green.ndvi import quality_weight
-from green.sources import CLIMATE_LAYERS, SOIL_LAYERS
+from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS
 from green.store import Store
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,21 @@ def input_stack(soil: dict[str, np.ndarray], climate: dict[str, np.ndarray]) -> 
 
 def natural_cells(store: Store) -> np.ndarray:
     return store.load("land_cover")["natural_share"] >= NATURAL_SHARE
+
+
+def run_size(
+    natural_share: np.ndarray, farm: np.ndarray, blocks: np.ndarray, years: list[int]
+) -> dict:
+    """The counts issue #15 uses to judge whether a run is big enough to trust its scores."""
+    natural = natural_share >= NATURAL_SHARE
+    per_block = np.unique(blocks[natural], return_counts=True)[1]
+    near_per_block = np.unique(blocks[near_farm(farm, natural)], return_counts=True)[1]
+    return {
+        "natural_cells": int(natural.sum()),
+        "blocks_with_50_natural_cells": int((per_block >= 50).sum()),
+        "blocks_with_25_natural_cells_next_to_farm": int((near_per_block >= 25).sum()),
+        "years": years,
+    }
 
 
 @dataclass
@@ -274,6 +290,9 @@ def train(
 
     logger.info("Evaluating on %d rows from %d years", len(rows.y), len(years))
     report, held_out, predicted, holdout = evaluate(rows, folds, test_years, seed)
+    land_cover = store.load("land_cover")
+    farm = land_cover["cover_class"] == COVER_CLASSES.index("farm")
+    report["run_size"] = run_size(land_cover["natural_share"], farm, blocks, years)
     store.save(
         "train/held_out",
         year=held_out.year,
