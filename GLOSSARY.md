@@ -43,5 +43,9 @@ _Avoid_: Region (that is the area a pipeline run covers, such as `small` or `con
 The area a pipeline run covers and its maps are published for, such as `small` (the Driftless Area) or `conus`.
 _Avoid_: Coverage area, extent, bounds
 
+**Land cell**:
+A cell of the Region that is at least half land in the 48 states or DC, by the Census 1:500,000 state boundaries. Only Land cells are trained on, predicted and mapped; the rest is sea, lakes, Canada or Mexico.
+_Avoid_: Valid cell, in-region cell
+
 **Derived layer**:
 A layer calculated from other layers rather than measured or predicted directly: the NDVI residual, Crop effect and Error next to farm land.

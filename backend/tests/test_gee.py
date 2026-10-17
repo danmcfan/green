@@ -1,11 +1,14 @@
 """Earth Engine Source chunking, with Earth Engine replaced by a fake that records requests."""
 
 import io
+import threading
+import time
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 
+from green import gee
 from green.gee import CHUNK, FINE_CHUNK, MAX_FINE_CHUNK, NDVI_CHUNK, EarthEngineSource
 from green.grid import REGIONS
 from green.sources import SOIL_LAYERS
@@ -140,3 +143,54 @@ def test_initialize_sets_a_deadline_and_few_client_retries(monkeypatch):
     # One stuck chunk must fail the run within about an hour and a half.
     attempts = (gee.RETRIES + 1) * (gee.CLIENT_RETRIES + 1)
     assert attempts * gee.DEADLINE_SECONDS + gee.RETRIES * gee.RETRY_WAIT <= 90 * 60
+
+
+CONCURRENCY_ERROR = (
+    "Too Many Requests: Exceeded Earth Engine concurrency limit. Your project is in Restricted"
+    " Mode."
+)
+
+
+def _refuse_more_than_one_at_a_time(source):
+    accept = source.ee.data.computePixels
+    lock = threading.Lock()
+    state = {"active": 0, "refused": 0}
+
+    def compute_pixels(request):
+        with lock:
+            state["active"] += 1
+            busy = state["active"] > 1
+        try:
+            if busy:
+                state["refused"] += 1
+                raise source.ee.EEException(CONCURRENCY_ERROR)
+            time.sleep(0.01)
+            return accept(request)
+        finally:
+            with lock:
+                state["active"] -= 1
+
+    source.ee.EEException = Exception
+    source.ee.data.computePixels = compute_pixels
+    return state
+
+
+def test_concurrency_limit_slows_requests_down_instead_of_failing(source, monkeypatch):
+    monkeypatch.setattr(gee, "THROTTLE_WAIT", 0)
+    state = _refuse_more_than_one_at_a_time(source)
+    values = source.soil(REGIONS["ohio_valley"])
+    assert not np.isnan(values[SOIL_LAYERS[0]]).any()
+    assert state["refused"] > 0
+    assert source.throttle.limit == 1
+
+
+def test_concurrency_limit_that_never_lifts_fails_with_when_the_quota_resets(source, monkeypatch):
+    monkeypatch.setattr(gee, "THROTTLE_WAIT", 0)
+    source.ee.EEException = Exception
+
+    def compute_pixels(request):
+        raise source.ee.EEException(CONCURRENCY_ERROR)
+
+    source.ee.data.computePixels = compute_pixels
+    with pytest.raises(gee.EarthEngineRestricted, match="first of the month"):
+        source.soil(REGIONS["small"])

@@ -14,6 +14,7 @@ from sklearn.preprocessing import StandardScaler
 
 from green.crops import near_farm
 from green.grid import spatial_blocks
+from green.land import land_cells
 from green.ndvi import quality_weight
 from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS
 from green.store import Store
@@ -85,7 +86,7 @@ def last_year_climate(store: Store, year: int) -> dict[str, np.ndarray] | None:
 
 
 def natural_cells(store: Store) -> np.ndarray:
-    return store.load("land_cover")["natural_share"] >= NATURAL_SHARE
+    return (store.load("land_cover")["natural_share"] >= NATURAL_SHARE) & land_cells(store)
 
 
 def run_size(

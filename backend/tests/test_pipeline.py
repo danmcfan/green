@@ -341,3 +341,15 @@ def test_every_train_run_replaces_train_log_with_its_own_output(run):
         assert "from an earlier run" not in log
         assert "Fitting final model" in log
         assert '"folds"' in log
+
+
+def test_cells_mostly_outside_the_us_are_left_out_of_training_predictions_and_maps(run):
+    store = Store(run / "data" / "small")
+    sea = store.load("land")["land_share"] < 0.5
+    assert sea.any() and not sea.all()
+    held_out = store.load("train/held_out")
+    assert not sea[held_out["row"], held_out["col"]].any()
+    assert np.isnan(store.load("predict/2010")["predicted"][:, sea]).all()
+    for _, values in pipeline._layer_maps(store, "soil_clay_0cm"):
+        assert np.isnan(values[sea]).all()
+        assert not np.isnan(values[~sea]).all()

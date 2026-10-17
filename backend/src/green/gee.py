@@ -9,12 +9,16 @@ import io
 import logging
 import math
 import os
+import threading
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 import numpy as np
 
 from green.grid import Grid
+from green.land import conus_boundary, land_share
 from green.layers import LAYERS_FILE
 from green.progress import Progress
 from green.sources import CLIMATE_LAYERS, COVER_CLASSES, SOIL_LAYERS, Satellite
@@ -47,6 +51,50 @@ RETRY_WAIT = 30
 # split in four and asked again. A 128-cell climate chunk ran out of memory over CONUS
 # (2013, 2026-10-16).
 TOO_LARGE = ("Reprojection output too large", "User memory limit exceeded")
+# Earth Engine's answer when a project sends more requests at once than it may: always
+# possible, and the usual answer once a noncommercial project has used its monthly EECU-hours
+# and is in Restricted Mode. Each refusal halves the requests in flight, down to one, and
+# waits THROTTLE_WAIT seconds; after THROTTLE_RETRIES refusals of one request the run stops.
+TOO_MANY = "concurrency limit"
+THROTTLE_WAIT = 60
+THROTTLE_RETRIES = 10
+
+
+class EarthEngineRestricted(RuntimeError):
+    """Earth Engine still refuses requests for concurrency with only one in flight."""
+
+
+class Throttle:
+    """At most `limit` Earth Engine requests at once, lowered when Earth Engine refuses some."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self._active = 0
+        self._changed = threading.Condition()
+
+    @contextmanager
+    def slot(self) -> Iterator[None]:
+        with self._changed:
+            self._changed.wait_for(lambda: self._active < self.limit)
+            self._active += 1
+        try:
+            yield
+        finally:
+            with self._changed:
+                self._active -= 1
+                self._changed.notify_all()
+
+    def back_off(self, label: str) -> None:
+        with self._changed:
+            if self.limit > 1:
+                self.limit //= 2
+                logger.warning(
+                    "%s: Earth Engine concurrency limit hit, now %d request(s) at once",
+                    label,
+                    self.limit,
+                )
+
+
 # Earth Engine's limit on fine pixels per coarse pixel in reduceResolution.
 MAX_PIXELS = 65535
 # A 4 km cell needs at least half of its fine pixels valid (docs/research §3).
@@ -113,6 +161,8 @@ class EarthEngineSource:
 
         self.ee = ee
         self.workers = workers
+        # Shared by every fetch, so a run that hits the limit stays slow rather than retrying.
+        self.throttle = Throttle(workers)
 
     def _fetch(
         self, label: str, image, grid: Grid, bands: list[str], chunk_size: int = CHUNK
@@ -121,6 +171,27 @@ class EarthEngineSource:
         out = np.full((len(bands), *grid.shape), np.nan, dtype=np.float32)
 
         def compute(sub: Grid) -> bytes:
+            refused_alone = 0
+            while True:
+                try:
+                    with self.throttle.slot():
+                        return send(sub)
+                except self.ee.EEException as e:
+                    if TOO_MANY not in str(e):
+                        raise
+                    refused_alone += self.throttle.limit == 1
+                    if refused_alone > THROTTLE_RETRIES:
+                        raise EarthEngineRestricted(
+                            f"{label}: Earth Engine refused one request at a time"
+                            f" {THROTTLE_RETRIES} times for its concurrency limit. If the"
+                            " project is in Restricted Mode, its EECU-hours reset on the first"
+                            " of the month at midnight Pacific time, or sooner if its tier is"
+                            " raised. Downloads saved so far are kept: run again to resume."
+                        ) from e
+                    self.throttle.back_off(label)
+                    time.sleep(THROTTLE_WAIT)
+
+        def send(sub: Grid) -> bytes:
             request = {
                 "expression": image.select(bands),
                 "fileFormat": "NPY",
@@ -250,6 +321,9 @@ class EarthEngineSource:
         )
         values = values.reshape(12, 2, *grid.shape)
         return values[:, 0], values[:, 1]
+
+    def land(self, grid: Grid) -> np.ndarray:
+        return land_share(grid, conus_boundary())
 
     def land_cover(self, grid: Grid) -> tuple[np.ndarray, np.ndarray]:
         ee = self.ee

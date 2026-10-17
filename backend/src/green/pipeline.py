@@ -18,6 +18,7 @@ from green.crops import (
     regional_rmse,
     worst_error,
 )
+from green.land import land_cells
 from green.layers import LayerDefinition, load_layers
 from green.limits import check_tiles
 from green.ndvi import FIRST_VIIRS_YEAR, apply_correction, fit_correction
@@ -103,6 +104,7 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
         return {"natural_share": natural_share, "cover_class": cover_class}
 
     cover_class = _cached(store, "land_cover", source, land_cover)["cover_class"]
+    _cached(store, "land", source, lambda: {"land_share": source.land(grid)})
 
     # The recent rainfall Input layer for early months of the first year needs the year before.
     if years:
@@ -125,7 +127,7 @@ def extract(source: Source, store: Store, years: list[int]) -> None:
         _cached(store, f"ndvi/{year}", source, ndvi)
 
 
-EXTRACTED = ["soil", "land_cover", "ndvi_correction", CORRECTION_YEARS, "climate", "ndvi"]
+EXTRACTED = ["soil", "land_cover", "land", "ndvi_correction", CORRECTION_YEARS, "climate", "ndvi"]
 
 
 def clear(store: Store, only: list[str] | None = None) -> list[Path]:
@@ -153,11 +155,12 @@ def predict(store: Store, model_path: Path) -> None:
     model = joblib.load(model_path)
     soil = store.load("soil")
     natural = natural_cells(store)
+    land = land_cells(store)
     years = store.years("ndvi")
     progress = Progress("Predicting years", len(years), interval=0)
     for year in years:
         x = input_stack(soil, store.load(f"climate/{year}"), last_year_climate(store, year))
-        valid = ~np.isnan(x).any(axis=-1)
+        valid = ~np.isnan(x).any(axis=-1) & land
         predicted = np.full(valid.shape, np.nan)
         predicted[valid] = model["pipeline"].predict(x[valid])
         observed = store.load(f"ndvi/{year}")["ndvi"]
@@ -200,6 +203,13 @@ def crop_effects(store: Store) -> dict:
 
 
 def _layer_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]:
+    """Every (name, 2D array) map for a layer, NaN outside the Land cells."""
+    land = land_cells(store)
+    for name, values in _unmasked_maps(store, layer_id):
+        yield name, np.where(land, values, np.nan)
+
+
+def _unmasked_maps(store: Store, layer_id: str) -> Iterator[tuple[str, np.ndarray]]:
     """Every (name, 2D array) map for a layer: one map, or one per year or month."""
 
     def monthly(kind: str, key: str):

@@ -43,6 +43,10 @@ class Source(Protocol):
         """Share of each cell under natural cover, and its main COVER_CLASSES index."""
         ...
 
+    def land(self, grid: Grid) -> np.ndarray:
+        """Share of each cell that is land in the 48 states or DC (see Land cell)."""
+        ...
+
 
 class SyntheticSource:
     """Deterministic made-up data with a learnable link from Input layers to NDVI."""
@@ -104,6 +108,12 @@ class SyntheticSource:
         farm = self._farm_share(grid)
         cover = np.where(farm > 0.5, COVER_CLASSES.index("farm"), COVER_CLASSES.index("grass"))
         return 1 - farm, cover
+
+    def land(self, grid: Grid) -> np.ndarray:
+        # The last column is sea, so runs leave out cells beyond the coast.
+        share = np.ones(grid.shape)
+        share[:, -1] = 0
+        return share
 
     def _farm_share(self, grid: Grid) -> np.ndarray:
         # Alternating bands of farm and natural land, three cells wide.

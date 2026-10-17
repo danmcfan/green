@@ -12,7 +12,7 @@ Green trains a model to predict satellite NDVI (a measure of how green vegetatio
 Earth Engine ──extract──▶ grid arrays ──train──▶ model ──predict──▶ Predicted NDVI ──tiles──▶ PMTiles ──▶ GitHub Release ──▶ map on GitHub Pages
 ```
 
-- **Grid:** the continental US at 4 km (1/24°, lined up with PRISM), one value per month ([ADR 0003](docs/adr/0003-conus-4km-monthly-grid.md)).
+- **Grid:** the continental US at 4 km (1/24°, lined up with PRISM), one value per month ([ADR 0003](docs/adr/0003-conus-4km-monthly-grid.md)). A Region is a rectangle, so cells less than half US land (by the Census 1:500,000 state boundaries, cut to the shoreline) are left out of training, predictions and the map.
 - **Input layers:** soil from OpenLandMap (bulk density, clay, organic carbon, pH, sand, water content, at 0 and 30 cm), and monthly climate from Daymet (precipitation, temperature, radiation, vapor pressure, snow, day length), plus the mean precipitation over the previous three months.
 - **Observed NDVI:** MODIS Terra for every year up to 2026, while Terra still collects ([ADR 0007](docs/adr/0007-modis-while-terra-has-data.md)). Years after that will come from VIIRS, corrected to match MODIS by a fit for each land cover class and month ([ADR 0005](docs/adr/0005-modis-then-viirs-observed-ndvi.md)).
 - **Model:** gradient boosting, trained on natural land only (forest, shrub, grass, wetland), with pixel quality as a training weight. Scores are reported for unseen places (spatial blocks), unseen years, and both together, against simple baselines. Random cross-validation would overstate the scores ([research](docs/research/ndvi-target-and-evaluation.md)).
@@ -64,6 +64,8 @@ Each step writes its log to `<step>.log` at the repo root (`run.log`, `train.log
 task pipeline -- run --region conus --start 2008 --end 2013
 task pipeline:watch            # or LOG=other.log
 ```
+
+If Earth Engine refuses requests for its concurrency limit, as it does once a noncommercial project has used its monthly EECU-hours and is in [Restricted Mode](https://developers.google.com/earth-engine/guides/noncommercial_tiers#restricted_mode), extract halves the requests it sends at once, down to one, and carries on more slowly. `--workers 1` starts it there. The EECU-hours reset on the first of each month at midnight Pacific time. The project's tier is on the [Manage tier](https://console.cloud.google.com/earth-engine/configuration/manage-tier) page and its past usage in Cloud Monitoring's Metrics Explorer.
 
 Extract saves each download under `data/<region>/` and reuses it on the next run, so a run that fails part way starts again where it stopped. To fetch data again, delete it:
 
