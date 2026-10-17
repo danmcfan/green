@@ -58,6 +58,9 @@ def main(argv: list[str] | None = None) -> None:
         nargs="+",
         help="for clear: saved files or folders to delete, e.g. land_cover ndvi/2012 climate",
     )
+    parser.add_argument(
+        "--logs-dir", type=Path, default=ROOT, help="each step writes its log to <step>.log here"
+    )
     parser.add_argument("--log", type=Path, default=ROOT / "run.log", help="for watch: the log")
     args = parser.parse_args(argv)
     if args.step == "watch":
@@ -65,11 +68,29 @@ def main(argv: list[str] | None = None) -> None:
 
         return watch(args.log)
 
+    # Each run replaces <step>.log with its own output, as well as printing it. `force`
+    # matters: without it basicConfig does nothing once logging has any handler, so a
+    # second run in the same process (or under a host that set up logging) wrote no log.
+    args.logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logging.FileHandler(args.logs_dir / f"{args.step}.log", mode="w")
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] %(levelname)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.StreamHandler(), log_file],
+        force=True,
     )
+    try:
+        _step(parser, args)
+    except BaseException:
+        logging.exception("%s failed", args.step)
+        raise
+    finally:
+        logging.getLogger().removeHandler(log_file)
+        log_file.close()
+
+
+def _step(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     store = Store(args.data_dir / args.region)
     model_path = args.models_dir / args.region / "model.joblib"
     tiles_dir = args.tiles_dir / args.region
@@ -92,11 +113,12 @@ def main(argv: list[str] | None = None) -> None:
             store.save_grid(REGIONS[args.region])
             pipeline.extract(_source(args.source, args.workers), store, years)
         case "train":
-            print(json.dumps(train(store, model_path, block_km=args.block_km), indent=2))
+            scores = train(store, model_path, block_km=args.block_km)
+            logging.info("Scores:\n%s", json.dumps(scores, indent=2))
         case "predict":
             pipeline.predict(store, model_path)
         case "crops":
-            print(json.dumps(pipeline.crop_effects(store), indent=2))
+            logging.info("Crop effects:\n%s", json.dumps(pipeline.crop_effects(store), indent=2))
         case "tiles":
             pipeline.tiles(store, tiles_dir, max_zoom=args.max_zoom)
         case "publish":
