@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from green.sources import CLIMATE_LAYERS, SOIL_LAYERS
 from green.train import (
@@ -11,6 +12,7 @@ from green.train import (
     evaluate,
     held_out_years,
     input_stack,
+    leave_one_year_out,
     metrics,
     run_size,
 )
@@ -128,10 +130,11 @@ def test_test_time_climatology_uses_every_training_year():
     np.testing.assert_allclose(_climatology(train, test, fallback=0.0), [0.55])
 
 
-def _climate(prcp: list[float]) -> dict[str, np.ndarray]:
-    """One cell's climate for a year, with every layer but rainfall at zero."""
+def _climate(prcp: list[float], **others: list[float]) -> dict[str, np.ndarray]:
+    """One cell's climate for a year, with every layer not given at zero."""
     climate = {name: np.zeros((12, 1, 1)) for name in CLIMATE_LAYERS}
-    climate["climate_prcp"] = np.array(prcp, dtype=float).reshape(12, 1, 1)
+    for name, values in {"prcp": prcp, **others}.items():
+        climate[f"climate_{name}"] = np.array(values, dtype=float).reshape(12, 1, 1)
     return climate
 
 
@@ -153,6 +156,35 @@ def test_recent_rainfall_is_missing_early_in_the_year_without_last_years_climate
 
     assert np.isnan(x[:3, 0, 0, RECENT]).all()
     assert x[3, 0, 0, RECENT] == 102
+
+
+def test_last_months_rainfall_tmax_and_vp_look_back_too():
+    this = _climate(list(range(101, 113)), tmax=list(range(201, 213)), vp=list(range(301, 313)))
+    last = _climate(list(range(1, 13)), tmax=list(range(21, 33)), vp=list(range(31, 43)))
+    x = input_stack(SOIL, this, last)[:, 0, 0]
+
+    np.testing.assert_allclose(x[:2, INPUT_LAYERS.index("recent_prcp_1m")], [12, 101])
+    np.testing.assert_allclose(x[0, INPUT_LAYERS.index("recent_tmax")], (30 + 31 + 32) / 3)
+    np.testing.assert_allclose(x[4, INPUT_LAYERS.index("recent_vp")], (302 + 303 + 304) / 3)
+
+
+def test_leave_one_year_out_scores_the_departure_for_every_year():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    rows.y = rows.y + np.random.default_rng(1).normal(size=16)[rows.row * 4 + rows.col] * 5
+    report = leave_one_year_out(rows, seed=0)
+
+    assert sorted(report["years"]) == [2010, 2011, 2012, 2013]
+    scores = list(report["years"].values())
+    assert all(s > 0.5 for s in scores)
+    assert report["mean"] == pytest.approx(np.mean(scores))
+    assert report["above_zero"] == 4
+    assert report["passes"]
+
+
+def test_leave_one_year_out_fails_when_input_layers_say_nothing_about_the_departure():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    rows.y = np.random.default_rng(2).normal(size=len(rows.y))
+    assert not leave_one_year_out(rows, seed=0)["passes"]
 
 
 def test_run_size_counts_natural_cells_and_spatial_blocks_big_enough_to_score():

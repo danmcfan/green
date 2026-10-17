@@ -20,12 +20,22 @@ from green.store import Store
 
 logger = logging.getLogger(__name__)
 
-# Mean rainfall over the RECENT_MONTHS before each month: soil and plants lag the weather.
-RECENT_MONTHS = 3
-INPUT_LAYERS = (*SOIL_LAYERS, *CLIMATE_LAYERS, "recent_prcp", "month_sin", "month_cos")
+# Mean of a climate layer over the months before each month: soil and plants lag the weather.
+RECENT_LAYERS = {
+    "recent_prcp": ("climate_prcp", 3),
+    "recent_prcp_1m": ("climate_prcp", 1),
+    "recent_tmax": ("climate_tmax", 3),
+    "recent_vp": ("climate_vp", 3),
+}
+INPUT_LAYERS = (*SOIL_LAYERS, *CLIMATE_LAYERS, *RECENT_LAYERS, "month_sin", "month_cos")
 # A cell trains the model only when natural cover fills most of it (docs/research §4).
 NATURAL_SHARE = 0.75
 HELD_OUT_YEARS = 3
+# Issue #26: the Input layers predict the Departure when, holding out each year in turn, the
+# mean temporal Departure R² reaches PASS_MEAN and at least PASS_ABOVE_ZERO of the years
+# (5 of 6) score above 0.
+PASS_MEAN = 0.10
+PASS_ABOVE_ZERO = 5 / 6
 # Unseen places (spatial blocks), unseen years, and both at once.
 HOLDOUTS = ("spatial", "temporal", "combined")
 
@@ -37,31 +47,34 @@ def input_stack(
 ) -> np.ndarray:
     """(12, height, width, layer) Input layers for one year, in INPUT_LAYERS order.
 
-    `last_year` is the previous year's climate, for recent rainfall early in the year; without
-    it, those months' recent rainfall is NaN.
+    `last_year` is the previous year's climate, for the recent layers early in the year; without
+    it, those months' recent layers are NaN.
     """
     months, height, width = climate[CLIMATE_LAYERS[0]].shape
     angle = 2 * np.pi * np.arange(months) / 12
     columns = [np.broadcast_to(soil[name], (months, height, width)) for name in SOIL_LAYERS]
     columns += [climate[name] for name in CLIMATE_LAYERS]
-    columns.append(_recent_prcp(climate, last_year))
+    columns += [_recent(climate, last_year, *spec) for spec in RECENT_LAYERS.values()]
     columns += [
         np.broadcast_to(f(angle)[:, None, None], (months, height, width)) for f in (np.sin, np.cos)
     ]
     return np.stack(columns, axis=-1)
 
 
-def _recent_prcp(
-    climate: dict[str, np.ndarray], last_year: dict[str, np.ndarray] | None
+def _recent(
+    climate: dict[str, np.ndarray],
+    last_year: dict[str, np.ndarray] | None,
+    layer: str,
+    months: int,
 ) -> np.ndarray:
-    prcp = climate["climate_prcp"]
+    values = climate[layer]
     before = (
-        last_year["climate_prcp"][-RECENT_MONTHS:]
+        last_year[layer][-months:]
         if last_year is not None
-        else np.full((RECENT_MONTHS, *prcp.shape[1:]), np.nan)
+        else np.full((months, *values.shape[1:]), np.nan)
     )
     window = np.lib.stride_tricks.sliding_window_view(
-        np.concatenate([before, prcp]), RECENT_MONTHS, axis=0
+        np.concatenate([before, values]), months, axis=0
     )
     return window[:-1].mean(axis=-1)
 
@@ -293,6 +306,27 @@ def evaluate(
     return report, *_held_out_rows(held_out)
 
 
+def leave_one_year_out(rows: Rows, seed: int) -> dict:
+    """Temporal Departure R² of climatology_gbm with each year held out in turn (issue #26)."""
+    scores = {}
+    for year in sorted(set(rows.year.tolist())):
+        logger.info("Fitting leave-one-year-out holdout (year %d)", year)
+        is_year = rows.year == year
+        test = rows.take(is_year)
+        predictions = _predict_all(rows.take(~is_year), test, seed, climatology=True)
+        scores[year] = _departure_r2(
+            test.y, predictions["climatology_gbm"], predictions["climatology"]
+        )
+    mean = float(np.mean(list(scores.values())))
+    above_zero = sum(s > 0 for s in scores.values())
+    return {
+        "years": scores,
+        "mean": mean,
+        "above_zero": above_zero,
+        "passes": mean >= PASS_MEAN and above_zero >= PASS_ABOVE_ZERO * len(scores),
+    }
+
+
 def _held_out_rows(
     parts: list[tuple[Rows, np.ndarray, str]],
 ) -> tuple[Rows, np.ndarray, np.ndarray]:
@@ -321,6 +355,8 @@ def train(
 
     logger.info("Evaluating on %d rows from %d years", len(rows.y), len(years))
     report, held_out, predicted, holdout = evaluate(rows, folds, test_years, seed)
+    if len(years) > 1:
+        report["leave_one_year_out"] = leave_one_year_out(rows, seed)
     land_cover = store.load("land_cover")
     farm = land_cover["cover_class"] == COVER_CLASSES.index("farm")
     report["run_size"] = run_size(land_cover["natural_share"], farm, blocks, years)
