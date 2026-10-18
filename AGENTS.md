@@ -11,3 +11,7 @@ Default canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context: one root `GLOSSARY.md` plus `docs/adr/`. See `docs/agents/domain.md`.
+
+## Git workflow
+
+We work directly on `main`. Commit and push to `main`; don't create feature branches or open pull requests for our own changes.
