@@ -8,7 +8,7 @@
 
 **[Open the map →](https://green.dannyobrien.dev/)**
 
-[![Observed NDVI across the continental US, July 2013](docs/images/map.png)](https://green.dannyobrien.dev/)
+[![Using the map: stepping through the months of 2013, switching from observed to predicted NDVI, then to the Crop effect](docs/images/demo.gif)](https://green.dannyobrien.dev/)
 
 Green trains a model to predict how green vegetation should be (satellite NDVI) across the continental United States, month by month, using only soil and climate data. It then puts three things side by side on a web map: the inputs, what satellites actually saw, and what the model expected.
 
