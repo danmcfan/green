@@ -168,6 +168,30 @@ def test_last_months_rainfall_tmax_and_vp_look_back_too():
     np.testing.assert_allclose(x[4, INPUT_LAYERS.index("recent_vp")], (302 + 303 + 304) / 3)
 
 
+def test_recent_water_balance_is_rainfall_minus_evapotranspiration_over_6_and_12_months():
+    # No sunlight, so no evapotranspiration: the water balance is the rainfall.
+    x = input_stack(SOIL, _climate(list(range(101, 113))), _climate(list(range(1, 13))))[:, 0, 0]
+
+    np.testing.assert_allclose(x[0, INPUT_LAYERS.index("recent_water_6m")], np.mean(range(7, 13)))
+    np.testing.assert_allclose(x[0, INPUT_LAYERS.index("recent_water_12m")], 6.5)
+    np.testing.assert_allclose(
+        x[11, INPUT_LAYERS.index("recent_water_12m")], (12 + sum(range(101, 112))) / 12
+    )
+
+
+def test_sun_and_heat_lower_the_recent_water_balance():
+    dry = dict(tmax=[30] * 12, tmin=[20] * 12, srad=[400] * 12, dayl=[43200] * 12)
+    wet = _climate([50] * 12)
+    x = input_stack(SOIL, _climate([50] * 12, **dry), wet)[:, 0, 0]
+
+    # Hargreaves: 0.0135 * (25 + 17.8) * 17.28 MJ / 2.45 = 4.07 mm/day, about 124 mm/month.
+    pet = 0.0135 * 42.8 * 400 * 43200 / 1e6 / 2.45 * 365.25 / 12
+    water = INPUT_LAYERS.index("recent_water_12m")
+    np.testing.assert_allclose(x[0, water], 50)
+    np.testing.assert_allclose(x[6, water], 50 - pet * 6 / 12)
+    assert x[6, water] < -10
+
+
 def test_leave_one_year_out_scores_the_departure_for_every_year():
     rows = _rows([2010, 2011, 2012, 2013], cells=16)
     rows.y = rows.y + np.random.default_rng(1).normal(size=16)[rows.row * 4 + rows.col] * 5

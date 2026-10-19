@@ -73,3 +73,17 @@ Read these with care: the drops are bigger than the R² itself because shuffling
 
 - Add a drought index that carries water deficit over longer times (SPEI or a soil-moisture layer, e.g. 6–12 month windows). Issue #26 deferred SPEI; the importance ranking (temperature and 3-month rain lead) suggests longer memory of water balance is the most likely gain.
 - Add more years (2001–2023) so the model sees more kinds of weather; 6 years is few for learning year-to-year change.
+
+## Adding 6- and 12-month water balance (issue #41)
+
+**It does not help.** Two new Input layers, `recent_water_6m` and `recent_water_12m`: rainfall minus potential evapotranspiration (Hargreaves' radiation form, from the Daymet `srad`, `dayl`, `tmax` and `tmin` already extracted), averaged over the previous 6 or 12 months. Built from the cached climate, so no new Earth Engine extract was needed. SPEI (`CSIC/SPEI/2_9`) is 0.5°, far coarser than the 4 km grid; TerraClimate `def`/`soil` is about 4 km but would need a new extract for a similar signal.
+
+Script: `docs/research/scripts/water_balance_skill.py`, unseen years only, on a fixed-seed sample of 8% of natural cells (all their years kept, 1,474,200 rows; about 7 minutes). Same method as above.
+
+| Unseen year | 2008 | 2009 | 2010 | 2011 | 2012 | 2013 | Mean R² |
+|---|---|---|---|---|---|---|---|
+| Without water balance | 0.049 | 0.050 | 0.158 | 0.194 | 0.177 | 0.093 | **0.120** |
+| With 6 and 12 months | 0.049 | 0.036 | 0.161 | 0.209 | 0.171 | 0.106 | **0.122** |
+| With 6 months only | 0.048 | 0.047 | 0.170 | 0.205 | 0.167 | 0.097 | **0.122** |
+
+The gain, +0.002 R², is smaller than the year-to-year swings either way (2009 −0.014, 2011 +0.015), so it is noise. The sample's baseline (0.120) matches the full-data 0.124. The 3-month rainfall and temperature layers already carry what this water balance knows; longer memory of water is not what the model is missing. More years (2001–2023) remain the more likely gain.
