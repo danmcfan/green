@@ -27,9 +27,6 @@ RECENT_LAYERS = {
     "recent_prcp_1m": ("climate_prcp", 1),
     "recent_tmax": ("climate_tmax", 3),
     "recent_vp": ("climate_vp", 3),
-    # Drought memory (issue #41): rainfall minus potential evapotranspiration, mm/month.
-    "recent_water_6m": ("water_balance", 6),
-    "recent_water_12m": ("water_balance", 12),
 }
 INPUT_LAYERS = (*SOIL_LAYERS, *CLIMATE_LAYERS, *RECENT_LAYERS, "month_sin", "month_cos")
 # A cell trains the model only when natural cover fills most of it (docs/research §4).
@@ -61,7 +58,6 @@ def input_stack(
     angle = 2 * np.pi * np.arange(months) / 12
     columns = [np.broadcast_to(soil[name], (months, height, width)) for name in SOIL_LAYERS]
     columns += [climate[name] for name in CLIMATE_LAYERS]
-    climate, last_year = (_with_water_balance(c) for c in (climate, last_year))
     columns += [_recent(climate, last_year, *spec) for spec in RECENT_LAYERS.values()]
     columns += [
         np.broadcast_to(f(angle)[:, None, None], (months, height, width)) for f in (np.sin, np.cos)
@@ -85,18 +81,6 @@ def _recent(
         np.concatenate([before, values]), months, axis=0
     )
     return window[:-1].mean(axis=-1)
-
-
-def _with_water_balance(climate: dict[str, np.ndarray] | None) -> dict[str, np.ndarray] | None:
-    """Add `water_balance`: rainfall minus Hargreaves' radiation-based potential
-    evapotranspiration, 0.0135 (Tmean + 17.8) Rs / 2.45 mm/day, Rs in MJ/m²/day."""
-    if climate is None:
-        return None
-    t_mean = (climate["climate_tmax"] + climate["climate_tmin"]) / 2
-    # Daymet srad is the mean over daylight (W/m²); times day length (s) gives J/m²/day.
-    radiation = climate["climate_srad"] * climate["climate_dayl"] / 1e6
-    pet = 0.0135 * (t_mean + 17.8) * radiation / 2.45 * 365.25 / 12
-    return {**climate, "water_balance": climate["climate_prcp"] - pet}
 
 
 def last_year_climate(store: Store, year: int) -> dict[str, np.ndarray] | None:

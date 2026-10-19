@@ -87,3 +87,5 @@ Script: `docs/research/scripts/water_balance_skill.py`, unseen years only, on a 
 | With 6 months only | 0.048 | 0.047 | 0.170 | 0.205 | 0.167 | 0.097 | **0.122** |
 
 The gain, +0.002 R², is smaller than the year-to-year swings either way (2009 −0.014, 2011 +0.015), so it is noise. The sample's baseline (0.120) matches the full-data 0.124. The 3-month rainfall and temperature layers already carry what this water balance knows; longer memory of water is not what the model is missing. More years (2001–2023) remain the more likely gain.
+
+The two layers were then removed from the model: they added inputs and code for no gain in skill. The script above is the record of this result; it needs the layers, so run it at commit cd82cb3.
