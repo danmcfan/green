@@ -205,7 +205,8 @@ class EarthEngineSource:
                 try:
                     return self.ee.data.computePixels(request)
                 except (TimeoutError, ConnectionError, self.ee.EEException) as e:
-                    if isinstance(e, self.ee.EEException) and BUSY not in str(e):
+                    passing = isinstance(e, (TimeoutError, ConnectionError)) or BUSY in str(e)
+                    if not passing:
                         raise
                     if attempt == RETRIES:
                         raise
