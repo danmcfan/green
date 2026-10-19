@@ -113,6 +113,7 @@ def test_a_request_that_times_out_is_retried(source, monkeypatch):
     """A hung request ends at the deadline (a TimeoutError) and is asked again."""
     monkeypatch.setattr("green.gee.RETRY_WAIT", 0)
     source.ee.EEException = Exception
+    source.ee.EEException = Exception
     calls = _failing_first(source, [TimeoutError("read timed out")])
     share, _ = source.land_cover(REGIONS["small"])
     assert not np.isnan(share).any()
