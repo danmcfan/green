@@ -62,7 +62,8 @@ def input_stack(
     columns += [
         np.broadcast_to(f(angle)[:, None, None], (months, height, width)) for f in (np.sin, np.cos)
     ]
-    return np.stack(columns, axis=-1)
+    # float32 halves the memory of a run's rows; the data come from float32 extracts anyway.
+    return np.stack(columns, axis=-1, dtype=np.float32)
 
 
 def _recent(
