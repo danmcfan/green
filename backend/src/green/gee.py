@@ -51,6 +51,10 @@ RETRY_WAIT = 30
 # split in four and asked again. A 128-cell climate chunk ran out of memory over CONUS
 # (2013, 2026-10-16).
 TOO_LARGE = ("Reprojection output too large", "User memory limit exceeded")
+# Earth Engine's 503 when its shared servers are short of memory, not this request
+# (modis NDVI 2003, 2026-10-19). Usually passes: retried like a timeout with a growing
+# wait, and if it keeps failing the chunk is split like TOO_LARGE.
+BUSY = "Earth Engine memory capacity exceeded"
 # Earth Engine's answer when a project sends more requests at once than it may: always
 # possible, and the usual answer once a noncommercial project has used its monthly EECU-hours
 # and is in Restricted Mode. Each refusal halves the requests in flight, down to one, and
@@ -200,7 +204,9 @@ class EarthEngineSource:
             for attempt in range(RETRIES + 1):
                 try:
                     return self.ee.data.computePixels(request)
-                except (TimeoutError, ConnectionError) as e:
+                except (TimeoutError, ConnectionError, self.ee.EEException) as e:
+                    if isinstance(e, self.ee.EEException) and BUSY not in str(e):
+                        raise
                     if attempt == RETRIES:
                         raise
                     logger.warning(
@@ -211,7 +217,7 @@ class EarthEngineSource:
                         attempt + 1,
                         RETRIES,
                     )
-                    time.sleep(RETRY_WAIT)
+                    time.sleep(RETRY_WAIT * 2**attempt)
             raise AssertionError("unreachable")
 
         def fill(row: int, col: int, sub: Grid) -> None:
@@ -222,7 +228,7 @@ class EarthEngineSource:
                 # it covers more fine pixels; split it in four and try again (issue #15). A
                 # chunk that runs out of memory is split the same way.
                 size = max(sub.width, sub.height)
-                if not any(error in str(e) for error in TOO_LARGE) or size == 1:
+                if not any(error in str(e) for error in (*TOO_LARGE, BUSY)) or size == 1:
                     raise
                 logger.warning("%s: chunk %d × %d too large, splitting", label, *sub.shape)
                 for r, c, part in sub.chunks(math.ceil(size / 2)):

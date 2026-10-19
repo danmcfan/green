@@ -112,6 +112,7 @@ def _failing_first(source, failures):
 def test_a_request_that_times_out_is_retried(source, monkeypatch):
     """A hung request ends at the deadline (a TimeoutError) and is asked again."""
     monkeypatch.setattr("green.gee.RETRY_WAIT", 0)
+    source.ee.EEException = Exception
     calls = _failing_first(source, [TimeoutError("read timed out")])
     share, _ = source.land_cover(REGIONS["small"])
     assert not np.isnan(share).any()
@@ -124,6 +125,33 @@ def test_a_request_that_keeps_timing_out_fails_the_run(source, monkeypatch):
     _failing_first(source, [TimeoutError("read timed out")] * 100)
     with pytest.raises(TimeoutError):
         source.land_cover(REGIONS["small"])
+
+
+def test_earth_engine_short_of_memory_is_retried(source, monkeypatch):
+    """Earth Engine's shared capacity running out is a passing 503: ask again."""
+    monkeypatch.setattr("green.gee.RETRY_WAIT", 0)
+    source.ee.EEException = Exception
+    calls = _failing_first(source, [Exception("Earth Engine memory capacity exceeded.")] * 2)
+    share, _ = source.land_cover(REGIONS["small"])
+    assert not np.isnan(share).any()
+    assert len(calls) == len(source.sizes) + 2
+
+
+def test_earth_engine_short_of_memory_for_good_splits_the_chunk(source, monkeypatch):
+    monkeypatch.setattr("green.gee.RETRY_WAIT", 0)
+    accept = source.ee.data.computePixels
+
+    def compute_pixels(request):
+        dims = request["grid"]["dimensions"]
+        if max(dims["width"], dims["height"]) > FINE_CHUNK // 2:
+            raise Exception("Earth Engine memory capacity exceeded.")
+        return accept(request)
+
+    source.ee.EEException = Exception
+    source.ee.data.computePixels = compute_pixels
+    share, _ = source.land_cover(REGIONS["ohio_valley"])
+    assert not np.isnan(share).any()
+    assert max(max(size) for size in source.sizes) <= FINE_CHUNK // 2
 
 
 def test_initialize_sets_a_deadline_and_few_client_retries(monkeypatch):
