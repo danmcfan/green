@@ -42,6 +42,9 @@ PASS_MEAN = 0.10
 PASS_ABOVE_ZERO = 5 / 6
 # Unseen places (spatial blocks), unseen years, and both at once.
 HOLDOUTS = ("spatial", "temporal", "combined")
+# Rows the Departure skill models fit and score on: a fixed-seed sample keeps train fast
+# (docs/research/departure-skill.md used every row and took 1.5 hours).
+DEPARTURE_SAMPLE = 1_000_000
 
 
 def input_stack(
@@ -344,6 +347,93 @@ def leave_one_year_out(rows: Rows, seed: int) -> dict:
     }
 
 
+def departure_skill(
+    rows: Rows, folds: np.ndarray, seed: int, sample: int = DEPARTURE_SAMPLE
+) -> dict:
+    """How much of the Departure the Input layers predict on unseen years, places and both.
+
+    As docs/research/departure-skill.md: the Departure is Observed NDVI minus the mean for the
+    cell and month over the other years; R² is against predicting no Departure, weighted by
+    Observed NDVI quality. Each test fits the GBM on training Departures (baselines from every
+    training row) and scores held-out rows, both drawn from a fixed-seed sample of `sample` rows.
+    """
+    cell_month = np.unique(_cell_key(rows), return_inverse=True)[1]
+    own_year = np.unique(_cell_key(rows) * 10_000 + rows.year, return_inverse=True)[1]
+    picked = np.sort(
+        np.random.default_rng(seed).choice(len(rows.y), min(sample, len(rows.y)), replace=False)
+    )
+    target = _departures(rows, cell_month, own_year, np.ones(len(rows.y), bool))[picked]
+    years = sorted(set(rows.year.tolist()))
+    fold_ids = sorted(set(folds.tolist()))
+    tests: dict[str, list[tuple[np.ndarray, np.ndarray]]] = {
+        "unseen_years": [(rows.year != y, rows.year == y) for y in years] if len(years) > 1 else [],
+        "unseen_places": [(folds != k, folds == k) for k in fold_ids] if len(fold_ids) > 1 else [],
+        "unseen_years_and_places": [
+            ((rows.year != y) & (folds != k), (rows.year == y) & (folds == k))
+            for y in years
+            for k in fold_ids
+        ]
+        if len(years) > 1 and len(fold_ids) > 1
+        else [],
+    }
+    report: dict = {"sample_rows": len(picked)}
+    for holdout, splits in tests.items():
+        scores = []
+        for i, (is_train, is_test) in enumerate(splits):
+            logger.info("Fitting Departure skill, %s test %d of %d", holdout, i + 1, len(splits))
+            departure = _departures(rows, cell_month, own_year, is_train)[picked]
+            fit = is_train[picked] & ~np.isnan(departure)
+            score = is_test[picked] & ~np.isnan(target)
+            if not fit.any() or not score.any():
+                continue
+            train = rows.take(picked[fit])
+            train.y = departure[fit]
+            model = _fit(gbm(seed), train)
+            scores.append(
+                _departure_score(
+                    target[score], model.predict(rows.x[picked[score]]), rows.weight[picked[score]]
+                )
+            )
+        if scores:
+            report[holdout] = {
+                name: float(np.mean([s[name] for s in scores]))
+                for name in ("r2", "rmse", "rmse_zero")
+            } | {"above_zero": sum(s["r2"] > 0 for s in scores), "tests": len(scores)}
+    return report
+
+
+def _cell_key(rows: Rows) -> np.ndarray:
+    return (rows.row.astype(np.int64) * (rows.col.max() + 1) + rows.col) * 12 + rows.month
+
+
+def _departures(
+    rows: Rows, cell_month: np.ndarray, own_year: np.ndarray, use: np.ndarray
+) -> np.ndarray:
+    """Each row's Observed NDVI minus the mean for its cell and month over the other years of
+    the `use` rows; NaN where none of them has another year."""
+    n_cm, n_own = cell_month.max() + 1, own_year.max() + 1
+    others_sum = (
+        np.bincount(cell_month[use], rows.y[use], n_cm)[cell_month]
+        - np.bincount(own_year[use], rows.y[use], n_own)[own_year] * use
+    )
+    others_count = (
+        np.bincount(cell_month[use], minlength=n_cm)[cell_month]
+        - np.bincount(own_year[use], minlength=n_own)[own_year] * use
+    )
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(others_count > 0, rows.y - others_sum / others_count, np.nan)
+
+
+def _departure_score(observed: np.ndarray, predicted: np.ndarray, weight: np.ndarray) -> dict:
+    """Weighted R² and RMSE of a predicted Departure, and the RMSE of predicting none."""
+    error, total = (weight * (predicted - observed) ** 2).sum(), (weight * observed**2).sum()
+    return {
+        "r2": float(1 - error / total) if total else float("nan"),
+        "rmse": float(np.sqrt(error / weight.sum())),
+        "rmse_zero": float(np.sqrt(total / weight.sum())),
+    }
+
+
 def _held_out_rows(
     parts: list[tuple[Rows, np.ndarray, str]],
 ) -> tuple[Rows, np.ndarray, np.ndarray]:
@@ -353,6 +443,22 @@ def _held_out_rows(
     predicted = np.concatenate([p for _, p, _ in parts])
     holdout = np.concatenate([np.full(len(p), name) for _, p, name in parts])
     return rows, predicted, holdout
+
+
+def _log_departure_skill(skill: dict) -> None:
+    for holdout in ("unseen_years", "unseen_places", "unseen_years_and_places"):
+        if holdout in skill:
+            s = skill[holdout]
+            logger.info(
+                "Departure skill, %s: mean R² %.3f, RMSE %.4f vs %.4f predicting 0, "
+                "%d of %d tests above 0",
+                holdout.replace("_", " "),
+                s["r2"],
+                s["rmse"],
+                s["rmse_zero"],
+                s["above_zero"],
+                s["tests"],
+            )
 
 
 def train(
@@ -374,6 +480,8 @@ def train(
     report, held_out, predicted, holdout = evaluate(rows, folds, test_years, seed)
     if len(years) > 1:
         report["leave_one_year_out"] = leave_one_year_out(rows, seed)
+    report["departure_skill"] = departure_skill(rows, folds, seed)
+    _log_departure_skill(report["departure_skill"])
     land_cover = store.load("land_cover")
     farm = land_cover["cover_class"] == COVER_CLASSES.index("farm")
     report["run_size"] = run_size(land_cover["natural_share"], farm, blocks, years)

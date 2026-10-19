@@ -9,6 +9,7 @@ from green.train import (
     _climatology,
     _training_departures,
     assign_folds,
+    departure_skill,
     evaluate,
     held_out_years,
     input_stack,
@@ -209,6 +210,40 @@ def test_leave_one_year_out_fails_when_input_layers_say_nothing_about_the_depart
     rows = _rows([2010, 2011, 2012, 2013], cells=16)
     rows.y = np.random.default_rng(2).normal(size=len(rows.y))
     assert not leave_one_year_out(rows, seed=0)["passes"]
+
+
+def test_departure_skill_scores_unseen_years_places_and_both():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    rows.y = rows.y + np.random.default_rng(1).normal(size=16)[rows.row * 4 + rows.col] * 5
+    folds = (rows.row >= 2).astype(int)
+    skill = departure_skill(rows, folds, seed=0)
+
+    expected_tests = {"unseen_years": 4, "unseen_places": 2, "unseen_years_and_places": 8}
+    for holdout, tests in expected_tests.items():
+        assert skill[holdout]["tests"] == tests
+        assert skill[holdout]["above_zero"] == tests
+        assert skill[holdout]["r2"] > 0.5
+        assert skill[holdout]["rmse"] < skill[holdout]["rmse_zero"]
+
+
+def test_departure_skill_fits_on_a_sample_of_rows():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    folds = (rows.row >= 2).astype(int)
+    assert departure_skill(rows, folds, seed=0, sample=300)["sample_rows"] == 300
+    assert departure_skill(rows, folds, seed=0)["sample_rows"] == len(rows.y)
+
+
+def test_departure_skill_is_near_zero_when_input_layers_say_nothing():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    rows.y = np.random.default_rng(2).normal(size=len(rows.y))
+    skill = departure_skill(rows, (rows.row >= 2).astype(int), seed=0)
+    assert skill["unseen_years"]["r2"] < 0.1
+
+
+def test_departure_skill_skips_unseen_places_with_one_spatial_block():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    skill = departure_skill(rows, np.zeros(len(rows.y), int), seed=0)
+    assert set(skill) == {"sample_rows", "unseen_years"}
 
 
 def test_run_size_counts_natural_cells_and_spatial_blocks_big_enough_to_score():
