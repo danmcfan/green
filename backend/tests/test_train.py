@@ -11,10 +11,12 @@ from green.train import (
     assign_folds,
     departure_skill,
     evaluate,
+    gbm,
     held_out_years,
     input_stack,
     leave_one_year_out,
     metrics,
+    ridge,
     run_size,
     sample_cells,
 )
@@ -257,3 +259,15 @@ def test_cell_sample_keeps_a_fixed_seed_fraction_of_the_cells():
 def test_cell_fraction_must_be_a_share_of_the_cells():
     with pytest.raises(ValueError):
         sample_cells(np.ones((2, 2), bool), 0, seed=0)
+
+
+def test_gbm_fits_without_scaling_the_input_layers():
+    assert [name for name, _ in gbm(0).steps] == ["model"]
+
+
+def test_ridge_baseline_fits_on_a_sample_of_rows():
+    rows = _rows([2010, 2011, 2012, 2013], cells=16)
+    rows.y = rows.x[:, 0] * 2.0 + 1.0
+    model = ridge(rows, seed=0, sample=40)
+    assert model["model"].n_features_in_ == rows.x.shape[1]
+    assert metrics(rows.y, model.predict(rows.x))["r2"] > 0.99

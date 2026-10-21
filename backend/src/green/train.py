@@ -42,6 +42,9 @@ HOLDOUTS = ("spatial", "temporal", "combined")
 # Rows the Departure skill models fit and score on: a fixed-seed sample keeps train fast
 # (docs/research/departure-skill.md used every row and took 1.5 hours).
 DEPARTURE_SAMPLE = 1_000_000
+# Rows the Ridge baseline fits on: scaling and centring copy its rows twice as float64, and a
+# linear model of 25 Input layers gains nothing from more than a few million rows.
+RIDGE_SAMPLE = 2_000_000
 
 
 def input_stack(
@@ -151,10 +154,11 @@ def build_rows(store: Store, cell_fraction: float = 1, seed: int = 0) -> Rows:
                 x[keep],
                 y[keep],
                 quality_weight(np.nan_to_num(observed["good_share"][keep])),
-                np.full(len(month), year),
-                month,
-                row,
-                col,
+                # Small integer types: these columns are copied for every holdout.
+                np.full(len(month), year, np.int16),
+                month.astype(np.int8),
+                row.astype(np.int32),
+                col.astype(np.int32),
             )
         )
     return Rows(
@@ -191,9 +195,15 @@ def metrics(observed: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
 
 
 def gbm(seed: int) -> Pipeline:
-    return Pipeline(
-        [("scale", StandardScaler()), ("model", HistGradientBoostingRegressor(random_state=seed))]
-    )
+    # No scaler: trees split on thresholds, so scaling changes nothing but costs a float64 copy.
+    return Pipeline([("model", HistGradientBoostingRegressor(random_state=seed))])
+
+
+def ridge(train: Rows, seed: int, sample: int = RIDGE_SAMPLE) -> Pipeline:
+    """The Ridge baseline, fitted on a fixed-seed sample of at most `sample` training rows."""
+    if len(train.y) > sample:
+        train = train.take(np.sort(np.random.default_rng(seed).choice(len(train.y), sample, False)))
+    return _fit(Pipeline([("scale", StandardScaler()), ("model", Ridge())]), train)
 
 
 def _fit(model: Pipeline, rows: Rows) -> Pipeline:
@@ -204,9 +214,7 @@ def _predict_all(train: Rows, test: Rows, seed: int, climatology: bool) -> dict[
     """Predictions on `test` from each baseline and the model, all fitted on `train` only."""
     predictions = {
         "mean": np.full(len(test.y), np.average(train.y, weights=train.weight)),
-        "ridge": _fit(Pipeline([("scale", StandardScaler()), ("model", Ridge())]), train).predict(
-            test.x
-        ),
+        "ridge": ridge(train, seed).predict(test.x),
         "gbm": _fit(gbm(seed), train).predict(test.x),
     }
     if climatology:
@@ -291,16 +299,14 @@ def evaluate(
     report: dict = {"test_years": test_years, "folds": int(folds.max()) + 1}
 
     logger.info("Fitting unseen-years holdout (test years %s)", test_years)
-    temporal = _predict_all(rows.take(~is_test_year), rows.take(is_test_year), seed, True)
     test = rows.take(is_test_year)
+    temporal = _predict_all(rows.take(~is_test_year), test, seed, True)
     report["temporal"] = _summarise([{m: metrics(test.y, p) for m, p in temporal.items()}])
     report["temporal_departure_r2"] = {
         m: _departure_r2(test.y, p, temporal["climatology"]) for m, p in temporal.items()
     }
     held_out = [(test, temporal["gbm"], "temporal")]
 
-    past = rows.take(~is_test_year)
-    past_folds = folds[~is_test_year]
     if report["folds"] < 2:
         logger.warning("Only one spatial block: skipping spatial and combined holdouts")
         return report, *_held_out_rows(held_out)
@@ -308,16 +314,20 @@ def evaluate(
     spatial, combined = [], []
     for k in range(report["folds"]):
         logger.info("Fitting spatial fold %d of %d", k + 1, report["folds"])
-        held = past.take(past_folds == k)
-        predictions = _predict_all(past.take(past_folds != k), held, seed, False)
+        # Masks on every row, not a copy of the past years to take folds from, keep only one
+        # fold's training rows in memory at a time.
+        train = rows.take(~is_test_year & (folds != k))
+        held = rows.take(~is_test_year & (folds == k))
+        predictions = _predict_all(train, held, seed, False)
         held_out.append((held, predictions["gbm"], "spatial"))
         spatial.append({m: metrics(held.y, p) for m, p in predictions.items()})
 
         unseen = test.take(folds[is_test_year] == k)
         if len(unseen.y):
-            predictions = _predict_all(past.take(past_folds != k), unseen, seed, False)
+            predictions = _predict_all(train, unseen, seed, False)
             held_out.append((unseen, predictions["gbm"], "combined"))
             combined.append({m: metrics(unseen.y, p) for m, p in predictions.items()})
+        del train, predictions  # before the next fold takes its training rows
     report["spatial"] = _summarise(spatial)
     if combined:
         report["combined"] = _summarise(combined)
@@ -467,7 +477,7 @@ def train(
     seed: int = 0,
     cell_fraction: float = 1,
 ) -> dict:
-    """Evaluate, then fit the final model on every row and save it with its scaler and metadata.
+    """Evaluate, then fit the final model on every row and save it with its metadata.
 
     `cell_fraction` below 1 trains on a fixed-seed sample of the natural cells, to fit in memory.
     """
@@ -514,7 +524,7 @@ def train(
     logger.info("Fitting final model on all %d rows", len(rows.y))
     joblib.dump(
         {
-            # The pipeline holds the fitted scaler and model together.
+            # The pipeline holds the fitted model.
             "pipeline": _fit(gbm(seed), rows),
             "input_layers": INPUT_LAYERS,
             "metadata": {
