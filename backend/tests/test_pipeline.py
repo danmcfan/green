@@ -1,6 +1,7 @@
 """A tiny fixture run of the whole pipeline on synthetic data."""
 
 import json
+import shutil
 import subprocess
 
 import joblib
@@ -341,6 +342,27 @@ def test_every_train_run_replaces_train_log_with_its_own_output(run):
         assert "from an earlier run" not in log
         assert "Fitting final model" in log
         assert '"folds"' in log
+
+
+def test_train_on_a_sample_of_cells_keeps_every_year_and_reports_the_fraction(run, tmp_path):
+    # A copy, so this test's train outputs leave the shared run as it was.
+    shutil.copytree(run / "data", tmp_path / "data")
+    common = [
+        "--region", "small",
+        "--block-km", "25",
+        "--data-dir", str(tmp_path / "data"),
+        "--logs-dir", str(tmp_path),
+    ]  # fmt: skip
+    main(["train", *common, "--models-dir", str(tmp_path / "all")])
+    main(["train", *common, "--models-dir", str(tmp_path / "half"), "--cell-fraction", "0.5"])
+    every = joblib.load(tmp_path / "all" / "small" / "model.joblib")["metrics"]
+    half = joblib.load(tmp_path / "half" / "small" / "model.joblib")
+    assert every["cell_fraction"] == 1
+    assert half["metrics"]["cell_fraction"] == 0.5
+    assert 0.3 * every["rows"] < half["metrics"]["rows"] < 0.7 * every["rows"]
+    assert half["metadata"]["years"] == [2010, 2011, 2012, 2013]
+    held_out = Store(tmp_path / "data" / "small").load("train/held_out")
+    assert set(held_out["holdout"]) == {"spatial", "temporal", "combined"}
 
 
 def test_cells_mostly_outside_the_us_are_left_out_of_training_predictions_and_maps(run):

@@ -47,6 +47,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--start", type=int, default=2011, help="first year")
     parser.add_argument("--end", type=int, default=2012, help="last year")
     parser.add_argument("--block-km", type=float, default=200, help="spatial CV block size")
+    parser.add_argument(
+        "--cell-fraction",
+        type=float,
+        default=1.0,
+        help="train on this fixed-seed random fraction of natural cells (all their years), "
+        "to fit in memory",
+    )
     parser.add_argument("--max-zoom", type=int, default=MAX_ZOOM)
     parser.add_argument("--workers", type=int, default=10, help="parallel Earth Engine requests")
     parser.add_argument("--data-dir", type=Path, default=ROOT / "data")
@@ -108,12 +115,15 @@ def _step(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
                 years,
                 args.block_km,
                 max_zoom=args.max_zoom,
+                cell_fraction=args.cell_fraction,
             )
         case "extract":
             store.save_grid(REGIONS[args.region])
             pipeline.extract(_source(args.source, args.workers), store, years)
         case "train":
-            scores = train(store, model_path, block_km=args.block_km)
+            scores = train(
+                store, model_path, block_km=args.block_km, cell_fraction=args.cell_fraction
+            )
             logging.info("Scores:\n%s", json.dumps(scores, indent=2))
         case "predict":
             pipeline.predict(store, model_path)

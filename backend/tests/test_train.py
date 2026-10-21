@@ -16,6 +16,7 @@ from green.train import (
     leave_one_year_out,
     metrics,
     run_size,
+    sample_cells,
 )
 
 
@@ -241,3 +242,18 @@ def test_run_size_counts_natural_cells_and_spatial_blocks_big_enough_to_score():
         "blocks_with_25_natural_cells_next_to_farm": 1,
         "years": [2011, 2012],
     }
+
+
+def test_cell_sample_keeps_a_fixed_seed_fraction_of_the_cells():
+    cells = np.ones((200, 200), bool)
+    cells[:, :50] = False
+    picked = sample_cells(cells, 0.25, seed=0)
+    assert not picked[:, :50].any()
+    assert picked.sum() == pytest.approx(0.25 * cells.sum(), rel=0.05)
+    assert (sample_cells(cells, 0.25, seed=0) == picked).all()
+    assert (sample_cells(cells, 1, seed=0) == cells).all()
+
+
+def test_cell_fraction_must_be_a_share_of_the_cells():
+    with pytest.raises(ValueError):
+        sample_cells(np.ones((2, 2), bool), 0, seed=0)

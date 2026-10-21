@@ -122,10 +122,23 @@ class Rows:
         return Rows(*(getattr(self, f)[keep] for f in self.__dataclass_fields__))
 
 
-def build_rows(store: Store) -> Rows:
-    """One row per natural cell, year and month that has Observed NDVI and every Input layer."""
+def sample_cells(cells: np.ndarray, fraction: float, seed: int) -> np.ndarray:
+    """A fixed-seed random `fraction` of the True `cells`; every cell when `fraction` is 1."""
+    if not 0 < fraction <= 1:
+        raise ValueError(f"cell fraction must be in (0, 1], not {fraction}")
+    if fraction == 1:
+        return cells
+    return cells & (np.random.default_rng(seed).random(cells.shape) < fraction)
+
+
+def build_rows(store: Store, cell_fraction: float = 1, seed: int = 0) -> Rows:
+    """One row per natural cell, year and month that has Observed NDVI and every Input layer.
+
+    With `cell_fraction` below 1, only a fixed-seed sample of the natural cells gives rows, each
+    with all its years and months, so Spatial blocks and year holdouts still work.
+    """
     soil = store.load("soil")
-    natural = natural_cells(store)
+    natural = sample_cells(natural_cells(store), cell_fraction, seed)
     parts = []
     for year in store.years("ndvi"):
         observed = store.load(f"ndvi/{year}")
@@ -447,10 +460,18 @@ def _log_departure_skill(skill: dict) -> None:
 
 
 def train(
-    store: Store, model_path: Path, block_km: float = 200, n_folds: int = 5, seed: int = 0
+    store: Store,
+    model_path: Path,
+    block_km: float = 200,
+    n_folds: int = 5,
+    seed: int = 0,
+    cell_fraction: float = 1,
 ) -> dict:
-    """Evaluate, then fit the final model on every row and save it with its scaler and metadata."""
-    rows = build_rows(store)
+    """Evaluate, then fit the final model on every row and save it with its scaler and metadata.
+
+    `cell_fraction` below 1 trains on a fixed-seed sample of the natural cells, to fit in memory.
+    """
+    rows = build_rows(store, cell_fraction, seed)
     if not len(rows.y):
         raise ValueError(
             f"no natural cells (natural cover ≥ {NATURAL_SHARE:.0%}) with Observed NDVI to train on"
@@ -461,8 +482,15 @@ def train(
     folds = cell_folds[rows.row, rows.col]
     test_years = held_out_years(years)
 
-    logger.info("Evaluating on %d rows from %d years", len(rows.y), len(years))
+    logger.info(
+        "Evaluating on %d rows from %d years (%.0f%% of natural cells)",
+        len(rows.y),
+        len(years),
+        100 * cell_fraction,
+    )
     report, held_out, predicted, holdout = evaluate(rows, folds, test_years, seed)
+    report["cell_fraction"] = cell_fraction
+    report["rows"] = len(rows.y)
     if len(years) > 1:
         report["leave_one_year_out"] = leave_one_year_out(rows, seed)
     report["departure_skill"] = departure_skill(rows, folds, seed)
@@ -493,6 +521,7 @@ def train(
                 "trained_at": datetime.now(UTC).isoformat(),
                 "years": years,
                 "rows": len(rows.y),
+                "cell_fraction": cell_fraction,
                 "block_km": block_km,
                 "n_folds": n_folds,
                 "seed": seed,

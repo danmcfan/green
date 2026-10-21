@@ -246,6 +246,7 @@ def tiles(
     out_dir: Path,
     layers: dict[str, LayerDefinition] | None = None,
     max_zoom: int = MAX_ZOOM,
+    cell_fraction: float = 1,
 ) -> list[Path]:
     """One PMTiles file per layer map, at out_dir/<layer>/<name>.pmtiles.
 
@@ -306,6 +307,7 @@ def run(
     block_km: float = 200,
     layers: dict[str, LayerDefinition] | None = None,
     max_zoom: int = MAX_ZOOM,
+    cell_fraction: float = 1,
 ) -> list[Path]:
     """The whole pipeline, from extract to PMTiles; data_dir must already hold grid.json."""
     store = Store(data_dir)
@@ -313,7 +315,7 @@ def run(
         with step("Extract"):
             extract(source, store, years)
         with step("Train"):
-            report = train(store, model_path, block_km=block_km)
+            report = train(store, model_path, block_km=block_km, cell_fraction=cell_fraction)
         logger.info("Model scores: %s", json.dumps(report, indent=2))
         with step("Predict"):
             predict(store, model_path)
